@@ -7,3 +7,7 @@ edition = "2021"
 
 [dependencies]
 ncollide2d = "0.33"
+
+[dev-dependencies]
+test-case = "3.0"
+approx = "0.5.1"

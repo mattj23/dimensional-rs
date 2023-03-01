@@ -44,3 +44,23 @@ pub fn farthest_pair_indices<N: RealField + Copy>(hull: &ConvexPolygon<N>) -> (u
 
     (i0, i1)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::assert_relative_eq;
+    use test_case::test_case;
+
+    #[test_case((0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0, 0.0), (0.5, 0.5))]
+    fn intersection_parameters(av: (f64, f64, f64, f64), bv: (f64, f64, f64, f64), p: (f64, f64)) {
+        let a = Point2::new(av.0, av.1);
+        let an = Vector2::new(av.2, av.3);
+        let b = Point2::new(bv.0, bv.1);
+        let bn = Vector2::new(bv.2, bv.3);
+
+        let (ap, bp) = intersection_param(&a, &an, &b, &bn).unwrap();
+
+        assert_relative_eq!(p.0, ap, epsilon = 1.0e-6);
+        assert_relative_eq!(p.1, bp, epsilon = 1.0e-6);
+    }
+}
