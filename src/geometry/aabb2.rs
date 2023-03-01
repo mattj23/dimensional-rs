@@ -2,8 +2,8 @@ use ncollide2d::bounding_volume::AABB;
 use ncollide2d::na::{Point2, RealField};
 use ncollide2d::query::Ray;
 
+/// Returns an array with the four corner points of an AABB
 fn aabb_points<N: RealField + Copy>(b: &AABB<N>) -> [Point2<N>; 4] {
-    /// Returns an array with the four corner points of an AABB
     [
         b.maxs.clone(),
         b.mins.clone(),
@@ -12,12 +12,12 @@ fn aabb_points<N: RealField + Copy>(b: &AABB<N>) -> [Point2<N>; 4] {
     ]
 }
 
+/// Detects whether or not an intersection exists between a ray and an aabb, regardless of the
+/// direction or position of the intersection with respect to the ray origin.
+///
+/// Uses the fast, branchless method described by Tavian Barnes in his blog at
+/// https://tavianator.com/2011/ray_box.html
 pub fn ray_intersects_aabb<N: RealField + Copy>(b: &AABB<N>, r: &Ray<N>) -> bool {
-    /// Detects whether or not an intersection exists between a ray and an aabb, regardless of the
-    /// direction or position of the intersection with respect to the ray origin.
-    ///
-    /// Uses the fast, branchless method described by Tavian Barnes in his blog at
-    /// https://tavianator.com/2011/ray_box.html
     let x_inv = N::from_f64(1.0).unwrap() / r.dir.x;
     let y_inv = N::from_f64(1.0).unwrap() / r.dir.y;
     let tx1 = (b.mins.x - r.origin.x) * x_inv;

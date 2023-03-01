@@ -1,4 +1,4 @@
-use crate::intersections::distances2::dist;
+use crate::geometry::distances2::dist;
 use ncollide2d::na::Point2;
 use ncollide2d::procedural::Polyline;
 use ncollide2d::query::Ray;
@@ -53,7 +53,7 @@ impl ClosedPolyline {
     //     results
     // }
 
-    // pub fn intersections(&self, ray: &Ray<f64>) -> Vec<Point2<f64>> {
-    //     intersections(&self.line, &ray)
+    // pub fn geometry(&self, ray: &Ray<f64>) -> Vec<Point2<f64>> {
+    //     geometry(&self.line, &ray)
     // }
 }

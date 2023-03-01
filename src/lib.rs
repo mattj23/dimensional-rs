@@ -1,2 +1,3 @@
+pub mod airfoil;
 pub mod closed_polyline;
-pub mod intersections;
+pub mod geometry;

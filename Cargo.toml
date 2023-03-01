@@ -11,3 +11,5 @@ ncollide2d = "0.33"
 [dev-dependencies]
 test-case = "3.0"
 approx = "0.5.1"
+serde = {version ="1.0", features=["derive"]}
+serde_json = "1.0"
