@@ -1,11 +1,11 @@
 use crate::geometry::shapes2::Circle2;
-use ncollide2d::na::{Isometry2, Point2};
+use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::shape::Ball;
 
-use std::error::Error;
-use ncollide2d::query::Ray;
-use crate::geometry::distances2::{dist};
+use crate::geometry::distances2::{dist, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
+use ncollide2d::query::Ray;
+use std::error::Error;
 
 fn closest<'a>(i: &'a Point2<f64>, a: &'a Ray<f64>, b: &'a Ray<f64>) -> &'a Ray<f64> {
     if dist(i, &a.origin) < dist(i, &b.origin) {
@@ -20,6 +20,7 @@ fn edge_circle(
     a1: &Point2<f64>,
     b0: &Point2<f64>,
     b1: &Point2<f64>,
+    n_points: usize,
 ) -> (Circle2, Vec<Point2<f64>>) {
     let a = Ray::new(a0.clone(), a1 - a0);
     let b = Ray::new(b0.clone(), b1 - b0);
@@ -27,19 +28,32 @@ fn edge_circle(
     if let Some((a_t, _)) = intersect_rays(&a, &b) {
         // The two entities are not parallel
         let i0 = a.point_at(a_t);
-
-        let intersection = a0 + (an * ap);  // The corner intersection
         let ray = closest(&i0, &a, &b);
 
         // Get the middle ray
-        let center_n = a.origin.
-        let center_ray = Ray::new(intersection, )
+        let center_n = Isometry2::rotation(signed_angle(&a.dir, &b.dir) / 2.0) * a.dir;
+        let center_ray = Ray::new(i0, center_n);
+        let (cp0, _) = intersect_rays(&center_ray, &ray.turned()).unwrap();
+        let center_point = center_ray.point_at(cp0);
+        let radius = dist(&center_point, &ray.origin);
+        let circle = Circle2::from_point(center_point, radius);
 
+        let va = a.projected_point(&circle.center) - circle.center;
+        let vb = b.projected_point(&circle.center) - circle.center;
+        let angle = signed_angle(&va, &vb);
 
-        todo!()
+        let mut points = Vec::new();
+        for i in 0..n_points + 1 {
+            let pn: Vector2<f64> = Isometry2::rotation(angle * (i as f64) / (n_points as f64)) * va;
+            let p: Point2<f64> = circle.center + pn;
+            if dist(&p, &a.origin) > 1e-6 && dist(&p, &b.origin) > 1e-6 {
+                points.push(p);
+            }
+        }
+
+        (circle, points)
     } else {
         todo!()
-
     }
 }
 
@@ -63,8 +77,8 @@ impl GeneratedAirfoil {
     pub fn from_mcl_and_thickness<Fm, Ft>(
         f_mcl: Fm,
         f_thk: Ft,
-        nm: u32,
-        nc: u32,
+        nm: usize,
+        nc: usize,
     ) -> GeneratedAirfoil
     where
         Fm: Fn(f64) -> Point2<f64>,
@@ -84,7 +98,28 @@ impl GeneratedAirfoil {
             side1.push(value[0] - n * thk[i]);
         }
 
-        todo!()
+        // Get the very last thickness
+        let last_d = mcl[nm] - mcl[nm - 1];
+        let last_n = (Isometry2::rotation(std::f64::consts::PI / 2.0) * last_d).normalize();
+        side0.push(mcl[nm] + last_n * thk[nm]);
+        side1.push(mcl[nm] - last_n * thk[nm]);
+
+        // Find the leading and trailing edge circles
+        let (lec, mut lep) = edge_circle(&side0[0], &side0[1], &side1[0], &side1[1], nc);
+        let (tec, mut tep) =
+            edge_circle(&side1[nm], &side1[nm - 1], &side0[nm], &side0[nm - 1], nc);
+        side1.reverse();
+        lep.reverse();
+        side0.append(&mut tep);
+        side0.append(&mut side1);
+        side0.append(&mut lep);
+
+        GeneratedAirfoil {
+            mcl,
+            contour: side0,
+            le: lec,
+            te: tec,
+        }
     }
 }
 

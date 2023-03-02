@@ -25,21 +25,29 @@ pub fn intersect_rays(r0: &Ray<f64>, r1: &Ray<f64>) -> Option<(f64, f64)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
 
-
 pub trait Line2 {
     fn origin(&self) -> Point2<f64>;
     fn dir(&self) -> Vector2<f64>;
     fn at(&self, t: f64) -> Point2<f64>;
 
+    fn projected_parameter(&self, p: &Point2<f64>) -> f64 {
+        let n = p - self.origin();
+        self.dir().dot(&n)
+    }
+
+    fn projected_point(&self, p: &Point2<f64>) -> Point2<f64> {
+        self.at(self.projected_parameter(p))
+    }
+
     /// Returns the direction of the vector turned in its orthogonal direction by rotating it
     /// 90 degrees
     fn orthogonal(&self) -> Vector2<f64> {
-        Isometry2::rotation(std::f64::consts::PI / 2.0) * self.dir
+        Isometry2::rotation(std::f64::consts::PI / 2.0) * self.dir()
     }
 
     /// Returns a ray that has rotated this entity by 90 degrees
     fn turned(&self) -> Ray<f64> {
-        Ray::new(self.origin, self.orthogonal())
+        Ray::new(self.origin(), self.orthogonal())
     }
 
     // fn intersect_line(&self, other: &impl Line2) -> Option<(f64, f64)> {
@@ -60,7 +68,6 @@ impl Line2 for Ray<f64> {
         self.point_at(t)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

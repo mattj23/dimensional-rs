@@ -3,8 +3,8 @@ use ncollide2d::query::Ray;
 use ncollide2d::shape::Ball;
 
 pub struct Circle2 {
-    center: Point2<f64>,
-    ball: Ball<f64>,
+    pub center: Point2<f64>,
+    pub ball: Ball<f64>,
 }
 
 impl Circle2 {
