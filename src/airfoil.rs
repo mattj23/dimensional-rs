@@ -1,5 +1,6 @@
 use ncollide2d::na::{Point2, Vector2};
 
+pub mod analyze;
 pub mod generate;
 
 pub struct CamberStation {
@@ -31,6 +32,14 @@ impl Airfoil {
             upper: stations.iter().map(|s| s.upper).collect(),
             lower: stations.iter().map(|s| s.lower).collect(),
         }
+    }
+
+    pub fn to_outer_contour(&self) -> Vec<Point2<f64>> {
+        let mut result = self.upper.to_vec();
+        let mut lower = self.lower.to_vec();
+        lower.reverse();
+        result.append(&mut lower);
+        result
     }
 
     pub fn analyze_from_points(points: &Vector2<f64>) -> Airfoil {

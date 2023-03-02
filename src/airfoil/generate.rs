@@ -52,7 +52,6 @@ pub trait AirfoilGenerator {
         stations.push(self.station_at(0.0));
         stations.push(self.station_at(1.0));
 
-
         let mut index: usize = 0;
         while index < stations.len() - 1 {
             let x0 = &fractions[index];
@@ -63,15 +62,16 @@ pub trait AirfoilGenerator {
 
             let x = (x0 + x1) / 2.0;
             let s = self.station_at(x);
-            if deviation(&s0.upper, &s1.upper, &s.upper) < tol_value &&
-                deviation(&s0.lower, &s1.lower, &s.lower) < tol_value &&
-                deviation(&s0.camber, &s1.camber, &s.camber) < tol_value {
+            if deviation(&s0.upper, &s1.upper, &s.upper) < tol_value
+                && deviation(&s0.lower, &s1.lower, &s.lower) < tol_value
+                && deviation(&s0.camber, &s1.camber, &s.camber) < tol_value
+            {
                 index += 1;
             } else {
                 fractions.insert(index + 1, x);
                 stations.insert(index + 1, s);
             }
-        };
+        }
 
         Airfoil::from_stations(&stations)
     }
