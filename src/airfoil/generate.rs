@@ -22,8 +22,8 @@ fn edge_circle(
     b1: &Point2<f64>,
     n_points: usize,
 ) -> (Circle2, Vec<Point2<f64>>) {
-    let a = Ray::new(a0.clone(), a1 - a0);
-    let b = Ray::new(b0.clone(), b1 - b0);
+    let a = Ray::new(a0.clone(), (a1 - a0).normalize());
+    let b = Ray::new(b0.clone(), (b1 - b0).normalize());
 
     if let Some((a_t, _)) = intersect_rays(&a, &b) {
         // The two entities are not parallel
@@ -46,7 +46,7 @@ fn edge_circle(
         for i in 0..n_points + 1 {
             let pn: Vector2<f64> = Isometry2::rotation(angle * (i as f64) / (n_points as f64)) * va;
             let p: Point2<f64> = circle.center + pn;
-            if dist(&p, &a.origin) > 1e-6 && dist(&p, &b.origin) > 1e-6 {
+            if dist(&p, &a0) > 1e-4 && dist(&p, &b0) > 1e-4 {
                 points.push(p);
             }
         }
@@ -94,15 +94,15 @@ impl GeneratedAirfoil {
         for (i, value) in mcl.windows(2).enumerate() {
             let d = value[1] - value[0];
             let n = (Isometry2::rotation(std::f64::consts::PI / 2.0) * d).normalize();
-            side0.push(value[0] + n * thk[i]);
-            side1.push(value[0] - n * thk[i]);
+            side0.push(value[0] + n * thk[i] / 2.0);
+            side1.push(value[0] - n * thk[i] / 2.0);
         }
 
         // Get the very last thickness
         let last_d = mcl[nm] - mcl[nm - 1];
         let last_n = (Isometry2::rotation(std::f64::consts::PI / 2.0) * last_d).normalize();
-        side0.push(mcl[nm] + last_n * thk[nm]);
-        side1.push(mcl[nm] - last_n * thk[nm]);
+        side0.push(mcl[nm] + last_n * thk[nm] / 2.0);
+        side1.push(mcl[nm] - last_n * thk[nm] / 2.0);
 
         // Find the leading and trailing edge circles
         let (lec, mut lep) = edge_circle(&side0[0], &side0[1], &side1[0], &side1[1], nc);
@@ -127,6 +127,7 @@ impl GeneratedAirfoil {
 mod tests {
     use super::*;
     use serde::Deserialize;
+    use approx::assert_relative_eq;
 
     #[derive(Deserialize)]
     struct TestGenAirfoilRaw {
@@ -202,6 +203,24 @@ mod tests {
             20,
         );
 
-        assert_eq!(input.mcl, vec![Point2::<f64>::new(0.0, 0.1)]);
+        for (i, v) in input.mcl.iter().enumerate() {
+            assert_relative_eq!(v.x, result.mcl[i].x, epsilon = 1e-6);
+            assert_relative_eq!(v.y, result.mcl[i].y, epsilon = 1e-6);
+        }
+
+        for (i, v) in input.contour.iter().enumerate() {
+            let u = &result.contour[i];
+            assert_relative_eq!(v.x, u.x, epsilon = 1e-6);
+            assert_relative_eq!(v.y, u.y, epsilon = 1e-6);
+        }
+
+
+        assert_relative_eq!(input.le.center.x, result.le.center.x, epsilon = 1e-6);
+        assert_relative_eq!(input.le.center.y, result.le.center.y, epsilon = 1e-6);
+        assert_relative_eq!(input.le.ball.radius, result.le.ball.radius, epsilon = 1e-6);
+
+        assert_relative_eq!(input.te.center.x, result.te.center.x, epsilon = 1e-6);
+        assert_relative_eq!(input.te.center.y, result.te.center.y, epsilon = 1e-6);
+        assert_relative_eq!(input.te.ball.radius, result.te.ball.radius, epsilon = 1e-6);
     }
 }
