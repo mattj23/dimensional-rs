@@ -53,15 +53,22 @@ fn edge_circle(
 
         (circle, points)
     } else {
+        // The ends are parallel, so we should just do a full radius
+
         todo!()
     }
 }
 
 struct GeneratedAirfoil {
-    mcl: Vec<Point2<f64>>,
-    contour: Vec<Point2<f64>>,
-    le: Circle2,
-    te: Circle2,
+    pub mcl: Vec<Point2<f64>>,
+    pub contour: Vec<Point2<f64>>,
+    pub le: Circle2,
+    pub te: Circle2,
+
+    s0_indices: (usize, usize),
+    s1_indices: (usize, usize),
+    le_indices: (usize, usize),
+    te_indices: (usize, usize),
 }
 
 impl GeneratedAirfoil {
@@ -110,15 +117,21 @@ impl GeneratedAirfoil {
             edge_circle(&side1[nm], &side1[nm - 1], &side0[nm], &side0[nm - 1], nc);
         side1.reverse();
         lep.reverse();
+
+        let s0_indices: (usize, usize) = (0, side0.len() - 1);
         side0.append(&mut tep);
+        let te_indices: (usize, usize) = (s0_indices.1 + 1, side0.len() - 1);
         side0.append(&mut side1);
+        let s1_indices: (usize, usize) = (te_indices.1 + 1, side0.len() - 1);
         side0.append(&mut lep);
+        let le_indices: (usize, usize) = (s1_indices.1 + 1, side0.len() - 1);
 
         GeneratedAirfoil {
             mcl,
             contour: side0,
             le: lec,
             te: tec,
+            s0_indices, s1_indices, le_indices, te_indices
         }
     }
 }
