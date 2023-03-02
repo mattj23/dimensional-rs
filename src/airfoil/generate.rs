@@ -7,6 +7,78 @@ use crate::geometry::line2::{intersect_rays, Line2};
 use ncollide2d::query::Ray;
 use std::error::Error;
 
+/// An AirfoilGenerator is an entity which can generate the x, y position of the mean camber line
+/// and the airfoil thickness at fractions of the chord. This provides the information necessary
+/// for a generator to compute the airfoil surfaces.
+pub trait AirfoilGenerator {
+    /// Return a 2D point with the position of the camber line at a fraction from 0.0 to 1.0
+    fn camber_line(&self, x: f64) -> Point2<f64>;
+
+    /// Return the full thickness of the airfoil with respect to the camber line at a fraction from
+    /// 0.0 to 1.0
+    fn thickness(&self, x: f64) -> f64;
+}
+
+/// A generator for a NACA 4-digit airfoil of the form MPTT, where M is the maximum camber P is the
+/// location of the maximum camber, and TT is the maximum thickness of the airfoil as a fraction of
+/// the chord.  For example, a NACA 2412 airfoil has a 2% camber at 40% of the chord and a max
+/// thickness which is 12% of the chord length.
+pub struct Naca4Digit {
+    t: f64,
+    chord_len: f64,
+    m: f64,
+    p: f64,
+}
+
+impl Naca4Digit {
+    /// Create a new NACA 4 digit generator.
+    ///
+    /// # Arguments
+    ///
+    /// * `t_max` - the maximum thickness of the airfoil as a fraction of the chord length. For
+    /// instance, on a NACA 2412 t_max should be 0.12
+    ///
+    /// * `chord_len` - the actual length of the airfoil chord
+    ///
+    /// * `max_camber` - The max camber as a fraction, for example on a NACA 2412 this value should
+    /// be set to 0.02
+    ///
+    /// * `max_camber_chord` - The location of the max camber as a fraction of chord length. For
+    /// example on a NACA 2412 this values should be 0.4
+    pub fn new(t_max: f64, chord_len: f64, max_camber: f64, max_camber_chord: f64) -> Naca4Digit {
+        Naca4Digit {
+            t: t_max,
+            chord_len,
+            m: max_camber,
+            p: max_camber_chord,
+        }
+    }
+}
+
+impl AirfoilGenerator for Naca4Digit {
+    fn camber_line(&self, x: f64) -> Point2<f64> {
+        let y = if self.p < 1e-6 {
+            0.0
+        } else if x < self.p {
+            (self.m / self.p.powf(2.0)) * (2.0 * self.p * x - x.powf(2.0))
+        } else {
+            (self.m / (1.0 - self.p).powf(2.0))
+                * ((1.0 - 2.0 * self.p) + 2.0 * self.p * x - x.powf(2.0))
+        };
+
+        Point2::new(x * self.chord_len, y * self.chord_len)
+    }
+
+    fn thickness(&self, x: f64) -> f64 {
+        (2.0 * self.t * self.chord_len)
+            * (1.485 * x.sqrt()
+                + -0.630 * x
+                + -1.758 * x.powf(2.0)
+                + 1.4215 * x.powf(3.0)
+                + -0.5075 * x.powf(4.0))
+    }
+}
+
 fn closest<'a>(i: &'a Point2<f64>, a: &'a Ray<f64>, b: &'a Ray<f64>) -> &'a Ray<f64> {
     if dist(i, &a.origin) < dist(i, &b.origin) {
         a
@@ -59,7 +131,7 @@ fn edge_circle(
     }
 }
 
-struct GeneratedAirfoil {
+pub struct GeneratedAirfoil {
     pub mcl: Vec<Point2<f64>>,
     pub contour: Vec<Point2<f64>>,
     pub le: Circle2,
@@ -131,7 +203,10 @@ impl GeneratedAirfoil {
             contour: side0,
             le: lec,
             te: tec,
-            s0_indices, s1_indices, le_indices, te_indices
+            s0_indices,
+            s1_indices,
+            le_indices,
+            te_indices,
         }
     }
 }
@@ -139,8 +214,9 @@ impl GeneratedAirfoil {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Deserialize;
     use approx::assert_relative_eq;
+    use serde::Deserialize;
+    use test_case::test_case;
 
     #[derive(Deserialize)]
     struct TestGenAirfoilRaw {
@@ -227,7 +303,6 @@ mod tests {
             assert_relative_eq!(v.y, u.y, epsilon = 1e-6);
         }
 
-
         assert_relative_eq!(input.le.center.x, result.le.center.x, epsilon = 1e-6);
         assert_relative_eq!(input.le.center.y, result.le.center.y, epsilon = 1e-6);
         assert_relative_eq!(input.le.ball.radius, result.le.ball.radius, epsilon = 1e-6);
@@ -235,5 +310,31 @@ mod tests {
         assert_relative_eq!(input.te.center.x, result.te.center.x, epsilon = 1e-6);
         assert_relative_eq!(input.te.center.y, result.te.center.y, epsilon = 1e-6);
         assert_relative_eq!(input.te.ball.radius, result.te.ball.radius, epsilon = 1e-6);
+    }
+
+    #[test_case(1.000000, 0.001260)]
+    #[test_case(0.840000, 0.021694)]
+    #[test_case(0.680000, 0.038557)]
+    #[test_case(0.520000, 0.051635)]
+    #[test_case(0.360000, 0.059263)]
+    #[test_case(0.200000, 0.057375)]
+    #[test_case(0.040000, 0.032277)]
+    fn test_naca_4_thickness(x: f64, e: f64) {
+        let naca = Naca4Digit::new(0.12, 1.0, 0.0, 0.0);
+        let result = naca.thickness(x);
+        assert_relative_eq!(e * 2.0, result, epsilon = 1e-3);
+    }
+
+    #[test_case(1.000000, 0.001260)]
+    #[test_case(0.840000, 0.021694)]
+    #[test_case(0.680000, 0.038557)]
+    #[test_case(0.520000, 0.051635)]
+    #[test_case(0.360000, 0.059263)]
+    #[test_case(0.200000, 0.057375)]
+    #[test_case(0.040000, 0.032277)]
+    fn test_naca_4_thickness_scaled(x: f64, e: f64) {
+        let naca = Naca4Digit::new(0.12, 2.0, 0.0, 0.0);
+        let result = naca.thickness(x);
+        assert_relative_eq!(e * 4.0, result, epsilon = 1e-3);
     }
 }

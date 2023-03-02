@@ -11,13 +11,13 @@ pub struct ClosedPolyline {
 }
 
 impl ClosedPolyline {
+    /// Create a new closed polyline. The provided points will be copied and adjacent duplicates
+    /// removed.  If the provided points are not enclosed, the first point will be copied to the
+    /// end.
     pub fn new(
         points: &Vec<Point2<f64>>,
         tol: Option<f64>,
     ) -> Result<ClosedPolyline, Box<dyn Error>> {
-        /// Create a new closed polyline. The provided points will be copied and adjacent duplicates
-        /// removed.  If the provided points are not enclosed, the first point will be copied to the
-        /// end.
         // Construct the vertices we're looking for
         let mut vertices: Vec<Point2<f64>> = vec![points[0]];
         let tol_value = tol.unwrap_or(1e-6);
