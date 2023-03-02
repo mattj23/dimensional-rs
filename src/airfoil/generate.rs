@@ -7,6 +7,9 @@ use crate::geometry::line2::{intersect_rays, Line2};
 use ncollide2d::query::Ray;
 use std::error::Error;
 
+const EPSILON: f64 = 1e-3;
+
+
 /// An AirfoilGenerator is an entity which can generate the x, y position of the mean camber line
 /// and the airfoil thickness at fractions of the chord. This provides the information necessary
 /// for a generator to compute the airfoil surfaces.
@@ -17,6 +20,39 @@ pub trait AirfoilGenerator {
     /// Return the full thickness of the airfoil with respect to the camber line at a fraction from
     /// 0.0 to 1.0
     fn thickness(&self, x: f64) -> f64;
+
+    fn points_at(&self, x: f64) -> (Point2<f64>, Point2<f64>, Point2<f64>) {
+        let x0 = (x - EPSILON).max(0.0);
+        let x1 = (x + EPSILON).min(1.0);
+
+        let clx = self.camber_line(x);
+        let cl0 = self.camber_line(x0);
+        let cl1 = self.camber_line(x1);
+
+        let d = Ray::new(clx, (cl1 - cl0).normalize());
+        let n = d.turned();
+        let t = self.thickness(x);
+
+        // (clx + n * t / 2.0, clx, clx - n * t / 2.0)
+        (n.point_at(t / 2.0), clx, n.point_at(-t / 2.0))
+    }
+
+    fn generate(&self, tol: Option<f64>) -> (Vec<Point2<f64>>, Vec<Point2<f64>>) {
+        let tol_value = tol.unwrap_or(1e-6);
+
+        let mut side0 = Vec::new();
+        let mut side1 = Vec::new();
+
+        let nm = 100;
+        let fractions: Vec<f64> = (0..101).map(|i| (i as f64) / (nm as f64)).collect();
+        for f in fractions.iter() {
+            let (s0, _, s1) = self.points_at(*f);
+            side0.push(s0);
+            side1.push(s1);
+        }
+
+        (side0, side1)
+    }
 }
 
 /// A generator for a NACA 4-digit airfoil of the form MPTT, where M is the maximum camber P is the
@@ -337,4 +373,18 @@ mod tests {
         let result = naca.thickness(x);
         assert_relative_eq!(e * 4.0, result, epsilon = 1e-3);
     }
+
+   #[test_case(1.0000,    0.0013)]
+   #[test_case(0.9000,    0.0208)]
+   #[test_case(0.7000,    0.0518)]
+   #[test_case(0.5000,    0.0724)]
+   #[test_case(0.3000,    0.0788)]
+   #[test_case(0.2000,    0.0726)]
+   #[test_case(0.1000,    0.0563)]
+   fn test_naca_4_camber(x: f64, e: f64) {
+       let naca = Naca4Digit::new(0.12, 1.0, 0.02, 0.4);
+       let t = naca.thickness(x) / 2.0;
+       let p = naca.camber_line(x);
+       assert_relative_eq!(e, t + p.y, epsilon = 1e-3);
+   }
 }
