@@ -1,10 +1,38 @@
-use ncollide2d::na::Vector2;
+use ncollide2d::na::{Point2, Vector2};
 
 pub mod generate;
 
-pub struct Airfoil {}
+pub struct CamberStation {
+    pub camber: Point2<f64>,
+    pub upper: Point2<f64>,
+    pub lower: Point2<f64>,
+}
+
+impl CamberStation {
+    pub fn new(camber: Point2<f64>, upper: Point2<f64>, lower: Point2<f64>) -> CamberStation {
+        CamberStation {
+            camber,
+            upper,
+            lower,
+        }
+    }
+}
+
+pub struct Airfoil {
+    pub camber: Vec<Point2<f64>>,
+    pub upper: Vec<Point2<f64>>,
+    pub lower: Vec<Point2<f64>>,
+}
 
 impl Airfoil {
+    pub fn from_stations(stations: &Vec<CamberStation>) -> Airfoil {
+        Airfoil {
+            camber: stations.iter().map(|s| s.camber).collect(),
+            upper: stations.iter().map(|s| s.upper).collect(),
+            lower: stations.iter().map(|s| s.lower).collect(),
+        }
+    }
+
     pub fn analyze_from_points(points: &Vector2<f64>) -> Airfoil {
         todo!()
     }
