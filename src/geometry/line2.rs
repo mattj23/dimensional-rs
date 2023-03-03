@@ -1,6 +1,5 @@
 use ncollide2d::na::{Isometry2, Point2, RealField, Vector2};
 use ncollide2d::query::Ray;
-use ncollide2d::shape::Ball;
 
 /// Compute the intersection parameters between two parameterized lines. Will return None if
 /// the two directions are parallel to each other

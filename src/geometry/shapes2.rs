@@ -1,5 +1,4 @@
 use ncollide2d::na::{Isometry2, Point2, Vector2};
-use ncollide2d::query::Ray;
 use ncollide2d::shape::Ball;
 
 pub struct Circle2 {

@@ -1,12 +1,10 @@
 use crate::geometry::shapes2::Circle2;
 use ncollide2d::na::{Isometry2, Point2, Vector2};
-use ncollide2d::shape::Ball;
 
 use crate::airfoil::{Airfoil, CamberStation};
 use crate::geometry::distances2::{dist, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use ncollide2d::query::Ray;
-use std::error::Error;
 
 const EPSILON: f64 = 1e-3;
 

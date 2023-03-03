@@ -1,9 +1,6 @@
-use crate::geometry::distances2::dist;
 use crate::geometry::line2::intersect_rays;
-use ncollide2d::na::Point2;
 use ncollide2d::query::Ray;
-use ncollide2d::shape::{ConvexPolygon, Polyline};
-use std::error::Error;
+use ncollide2d::shape::{Polyline};
 
 pub fn ray_intersect_with_edge(
     line: &Polyline<f64>,
@@ -35,6 +32,11 @@ pub fn naive_ray_intersections(line: &Polyline<f64>, ray: &Ray<f64>) -> Vec<f64>
     results
 }
 
+pub fn max_intersection(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<f64> {
+    let ts = naive_ray_intersections(&line, &ray);
+    ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).cloned()
+}
+
 /// Finds the projected distance of the farthest point in the polyline from a ray origin in the
 /// ray direction
 pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -> f64 {
@@ -47,11 +49,29 @@ pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -
     farthest
 }
 
+/// Attempts to create a "spanning ray" through the polyline along the parameterized line
+/// represented by the ray argument. A "spanning ray" is a ray that starts on the surface of
+/// the polyline and passes through it ending at the other side, such that t=0 is an
+/// intersection with the polyline on one side, t=1.0 is an intersection on the other side, and
+/// there are no additional intersections between them. The spanning ray will have the same
+/// direction as the original intersection ray.
+pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<Ray<f64>> {
+    let mut results = naive_ray_intersections(&line, ray);
+    results.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    if results.len() == 2 {
+        let p0 = ray.point_at(results[0]);
+        let p1 = ray.point_at(results[1]);
+        Some(Ray::new(p0, p1 - p0))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use ncollide2d::na::Vector2;
+    use ncollide2d::na::{Point2, Vector2};
     use test_case::test_case;
 
     #[test_case((3.1, 4.7, 0.9, 3.5), 1.297781)]
