@@ -1,5 +1,6 @@
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::intersect_rays;
+use crate::geometry::polyline_intersections::naive_ray_intersections;
 use ncollide2d::na::Point2;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::{ConvexPolygon, Polyline};
@@ -38,51 +39,21 @@ impl ClosedPolyline {
         Ok(ClosedPolyline { line, hull })
     }
 
+    /// Attempts to create a "spanning ray" through the polyline along the parameterized line
+    /// represented by the ray argument. A "spanning ray" is a ray that starts on the surface of
+    /// the polyline and passes through it ending at the other side, such that t=0 is an
+    /// intersection with the polyline on one side, t=1.0 is an intersection on the other side, and
+    /// there are no additional intersections between them. The spanning ray will have the same
+    /// direction as the original intersection ray.
     pub fn spanning_ray(&self, ray: &Ray<f64>) -> Option<Ray<f64>> {
-        let results = self.naive_intersections(ray);
+        let mut results = naive_ray_intersections(&self.line, ray);
+        results.sort_by(|a, b| a.partial_cmp(b).unwrap());
         if results.len() == 2 {
-            Some(Ray::new(results[0], results[1] - results[0]))
-
+            let p0 = ray.point_at(results[0]);
+            let p1 = ray.point_at(results[1]);
+            Some(Ray::new(p0, p1 - p0))
         } else {
             None
         }
     }
-
-    pub fn ray_intersect_with_edge(&self, ray: &Ray<f64>, edge_index: usize) -> Option<f64> {
-        let v0 = self.line.points()[self.line.edges()[edge_index].indices.x];
-        let v1 = self.line.points()[self.line.edges()[edge_index].indices.y];
-        let edge_ray = Ray::new(v0, v1 - v0);
-        if let Some((t0, t1)) = intersect_rays(&ray, &edge_ray) {
-            if t1 >= 0.0 && t1 <= 1.0 {
-                Some(t0)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    pub fn intersect_with_edge(&self, ray: &Ray<f64>, edge_index: usize) -> Option<Point2<f64>> {
-        if let Some(t) = self.ray_intersect_with_edge(&ray, edge_index) {
-            Some(ray.point_at(t))
-        } else {
-            None
-        }
-    }
-
-    pub fn naive_intersections(&self, ray: &Ray<f64>) -> Vec<Point2<f64>> {
-        let mut results: Vec<Point2<f64>> = Vec::new();
-        for (i, _) in self.line.edges().iter().enumerate() {
-            if let Some(point) = self.intersect_with_edge(ray, i) {
-                results.push(point);
-            }
-        }
-
-        results
-    }
-
-    // pub fn geometry(&self, ray: &Ray<f64>) -> Vec<Point2<f64>> {
-    //     geometry(&self.line, &ray)
-    // }
 }

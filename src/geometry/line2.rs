@@ -50,6 +50,9 @@ pub trait Line2 {
         Ray::new(self.origin(), self.orthogonal())
     }
 
+    fn reversed(&self) -> Ray<f64> {
+        Ray::new(self.origin() + self.dir(), -self.dir())
+    }
     // fn intersect_line(&self, other: &impl Line2) -> Option<(f64, f64)> {
     //     intersection_param(&self.origin(), &self.dir(), &other.origin(), &other.dir())
     // }
