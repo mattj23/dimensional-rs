@@ -1,6 +1,43 @@
-use crate::geometry::line2::intersect_rays;
+use crate::geometry::distances2::{mid_point, signed_angle};
+use crate::geometry::line2::{intersect_rays, Line2};
+use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::query::Ray;
-use ncollide2d::shape::{Polyline};
+use ncollide2d::shape::Polyline;
+
+#[derive(Clone)]
+pub struct SpanningRay {
+    ray: Ray<f64>,
+}
+
+impl SpanningRay {
+    pub fn new(p0: Point2<f64>, p1: Point2<f64>) -> SpanningRay {
+        SpanningRay {
+            ray: Ray::new(p0, p1 - p0),
+        }
+    }
+
+    pub fn symmetry(&self, other: &SpanningRay) -> Ray<f64> {
+        let angle = signed_angle(&self.ray.dir, &other.ray.dir) * 0.5;
+        Ray::new(
+            mid_point(&self.ray.origin, &other.ray.origin),
+            Isometry2::rotation(angle) * self.ray.dir,
+        )
+    }
+}
+
+impl Line2 for SpanningRay {
+    fn origin(&self) -> Point2<f64> {
+        self.ray.origin.clone()
+    }
+
+    fn dir(&self) -> Vector2<f64> {
+        self.ray.dir.clone()
+    }
+
+    fn at(&self, t: f64) -> Point2<f64> {
+        self.ray.point_at(t)
+    }
+}
 
 pub fn ray_intersect_with_edge(
     line: &Polyline<f64>,
@@ -55,13 +92,14 @@ pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -
 /// intersection with the polyline on one side, t=1.0 is an intersection on the other side, and
 /// there are no additional intersections between them. The spanning ray will have the same
 /// direction as the original intersection ray.
-pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<Ray<f64>> {
+pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<SpanningRay> {
     let mut results = naive_ray_intersections(&line, ray);
     results.sort_by(|a, b| a.partial_cmp(b).unwrap());
     if results.len() == 2 {
-        let p0 = ray.point_at(results[0]);
-        let p1 = ray.point_at(results[1]);
-        Some(Ray::new(p0, p1 - p0))
+        Some(SpanningRay::new(
+            ray.point_at(results[0]),
+            ray.point_at(results[1]),
+        ))
     } else {
         None
     }
@@ -73,6 +111,20 @@ mod tests {
     use approx::assert_relative_eq;
     use ncollide2d::na::{Point2, Vector2};
     use test_case::test_case;
+
+    #[test]
+    fn test_symmetry_ray() {
+        let s0 = SpanningRay::new(Point2::new(1.0, 0.0), Point2::new(2.0, 0.0));
+        let s1 = SpanningRay::new(Point2::new(0.0, 1.0), Point2::new(0.0, 2.0));
+        let r = s0.symmetry(&s1);
+        let en = Vector2::new(1.0, 1.0).normalize();
+
+        assert_relative_eq!(0.5, r.origin.x, epsilon = 1e-8);
+        assert_relative_eq!(0.5, r.origin.y, epsilon = 1e-8);
+
+        assert_relative_eq!(en.x, r.dir.x, epsilon = 1e-8);
+        assert_relative_eq!(en.y, r.dir.y, epsilon = 1e-8);
+    }
 
     #[test_case((3.1, 4.7, 0.9, 3.5), 1.297781)]
     #[test_case((-3.6, -0.6, 2.4, -4.5), 7.517647)]

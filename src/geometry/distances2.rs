@@ -1,4 +1,6 @@
+use crate::geometry::line2::Line2;
 use ncollide2d::na::{Point2, RealField, Vector2};
+use ncollide2d::query::Ray;
 use ncollide2d::shape::ConvexPolygon;
 
 /// Return the distance between two 2D points
@@ -8,6 +10,20 @@ pub fn dist<N: RealField + Copy>(a: &Point2<N>, b: &Point2<N>) -> N {
 
 pub fn signed_angle<N: RealField + Copy>(v1: &Vector2<N>, v2: &Vector2<N>) -> N {
     (v1.x * v2.y - v1.y * v2.x).atan2(v1.x * v2.x + v1.y * v2.y)
+}
+
+pub fn closest_angle<N: RealField + Copy>(v1: &Vector2<N>, v2: &Vector2<N>) -> N {
+    (v1.normalize().dot(&v2.normalize())).acos()
+}
+
+pub fn mid_point<N: RealField + Copy>(p0: &Point2<N>, p1: &Point2<N>) -> Point2<N> {
+    let n = p1 - p0;
+    p0 + (n / N::from_f64(2.0).unwrap())
+}
+
+pub fn deviation(p0: &Point2<f64>, p1: &Point2<f64>, test: &Point2<f64>) -> f64 {
+    let ray = Ray::new(*p0, (p1 - p0).normalize());
+    dist(&ray.projected_point(test), test)
 }
 
 /// Find the indices of the farthest pair of points on a convex polygon

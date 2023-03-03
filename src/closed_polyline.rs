@@ -37,5 +37,4 @@ impl ClosedPolyline {
 
         Ok(ClosedPolyline { line, hull })
     }
-
 }

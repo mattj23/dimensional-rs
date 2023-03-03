@@ -2,16 +2,11 @@ use crate::geometry::shapes2::Circle2;
 use ncollide2d::na::{Isometry2, Point2, Vector2};
 
 use crate::airfoil::{Airfoil, CamberStation};
-use crate::geometry::distances2::{dist, signed_angle};
+use crate::geometry::distances2::{deviation, dist, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use ncollide2d::query::Ray;
 
 const EPSILON: f64 = 1e-3;
-
-fn deviation(p0: &Point2<f64>, p1: &Point2<f64>, test: &Point2<f64>) -> f64 {
-    let ray = Ray::new(*p0, (p1 - p0).normalize());
-    dist(&ray.projected_point(test), test)
-}
 
 /// An AirfoilGenerator is an entity which can generate the x, y position of the mean camber line
 /// and the airfoil thickness at fractions of the chord. This provides the information necessary
@@ -272,6 +267,7 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use serde::Deserialize;
+    use std::error::Error;
     use test_case::test_case;
 
     #[derive(Deserialize)]

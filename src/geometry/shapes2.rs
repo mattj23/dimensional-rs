@@ -1,6 +1,7 @@
 use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::shape::Ball;
 
+#[derive(Clone, Debug)]
 pub struct Circle2 {
     pub center: Point2<f64>,
     pub ball: Ball<f64>,

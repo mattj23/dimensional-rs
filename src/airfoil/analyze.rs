@@ -1,15 +1,17 @@
-use super::{CamberStation};
+use super::CamberStation;
 use crate::closed_polyline::ClosedPolyline;
-use crate::geometry::distances2::{dist, farthest_pair_indices};
+use crate::geometry::distances2::{closest_angle, deviation, dist, farthest_pair_indices, mid_point, signed_angle};
 use crate::geometry::line2::Line2;
-use crate::geometry::polyline_intersections::{farthest_point_direction_distance, max_intersection, spanning_ray};
+use crate::geometry::polyline_intersections::{
+    farthest_point_direction_distance, max_intersection, spanning_ray, SpanningRay,
+};
+use crate::geometry::shapes2::Circle2;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
 use ncollide2d::shape::Polyline;
 use std::fs::File;
 use std::io::Write;
-use crate::geometry::shapes2::Circle2;
 
 fn write_points(v: &[Point2<f64>], file_name: &str) -> std::io::Result<()> {
     let mut file = File::create(file_name)?;
@@ -18,6 +20,48 @@ fn write_points(v: &[Point2<f64>], file_name: &str) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+struct ExtractStation {
+    spanning_ray: SpanningRay,
+    upper: Point2<f64>,
+    lower: Point2<f64>,
+    circle: Circle2,
+}
+
+impl ExtractStation {
+    fn new(
+        spanning_ray: SpanningRay,
+        upper: Point2<f64>,
+        lower: Point2<f64>,
+        circle: Circle2,
+    ) -> ExtractStation {
+        ExtractStation {
+            spanning_ray,
+            upper,
+            lower,
+            circle,
+        }
+    }
+
+    fn contact_angle(&self) -> f64 {
+       closest_angle(
+            &(self.upper - self.circle.center),
+            &(self.lower - self.circle.center),
+        )
+    }
+
+    /// Calculates the camber point between the upper and lower points
+    fn cp(&self) -> Point2<f64> {
+        mid_point(&self.upper, &self.lower)
+    }
+
+    fn contact_ray(&self) -> Ray<f64> {
+        Ray::new(self.lower.clone(), self.upper - self.lower)
+    }
+
+    fn camber_ray(&self) -> Ray<f64> {
+        Ray::new(self.cp(), self.contact_ray().orthogonal().normalize())
+    }
 }
 
 struct MeanSearchState {
@@ -42,55 +86,108 @@ impl MeanSearchState {
     }
 }
 
-fn find_center_point(line: &Polyline<f64>, ray: &Ray<f64>, tol: Option<f64>) -> CamberStation {
+fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) -> ExtractStation {
     let tol_value = tol.unwrap_or(1e-5);
-    let mut positive = MeanSearchState::new(1.0, ray.point_at(1.0));
-    let mut negative = MeanSearchState::new(0.0, ray.point_at(0.0));
+    let mut positive = MeanSearchState::new(1.0, ray.at(1.0));
+    let mut negative = MeanSearchState::new(0.0, ray.at(0.0));
 
-    let mut working = ray.point_at(0.5);
+    let mut working = ray.at(0.5);
 
-    while (positive.fraction - negative.fraction) * ray.dir.norm() > tol_value {
+    while (positive.fraction - negative.fraction) * ray.dir().norm() > tol_value {
+        // TODO: Check for when you're parallel to a square edge
+
         let fraction = (positive.fraction + negative.fraction) * 0.5;
-        working = ray.point_at(fraction);
+        working = ray.at(fraction);
 
         let closest = line.project_point(&Isometry::identity(), &working, false);
         let to_closest = closest.point - working;
         let distance = dist(&working, &closest.point);
-        if to_closest.dot(&ray.dir) > 0.0 {
+        if to_closest.dot(&ray.dir()) > 0.0 {
             positive.update(fraction, distance, closest.point.clone());
         } else {
             negative.update(fraction, distance, closest.point.clone());
         }
     }
 
-    CamberStation::new(working, positive.point, negative.point)
+    let circle = Circle2::from_point(
+        ray.at((positive.fraction + negative.fraction) * 0.5),
+        (positive.distance + negative.distance) * 0.5,
+    );
+
+    ExtractStation::new(ray.clone(), positive.point, negative.point, circle)
 }
 
-
-fn spanning_ray_advance(line: &Polyline<f64>, camber_ray: &Ray<f64>, d: f64) -> Option<Ray<f64>> {
+fn spanning_ray_advance(
+    line: &Polyline<f64>,
+    camber_ray: &Ray<f64>,
+    d: f64,
+) -> Option<SpanningRay> {
     let mut advance = 0.25;
-    let f = d / camber_ray.dir.norm();
     while advance >= 0.05 {
-        let test_ray = Ray::new(camber_ray.point_at(f * advance), -camber_ray.orthogonal());
+        let test_ray = Ray::new(camber_ray.point_at(d * advance), -camber_ray.orthogonal());
         if let Some(ray) = spanning_ray(&line, &test_ray) {
             return Some(ray);
         } else {
             advance -= 0.05;
         }
-    };
+    }
 
     None
 }
 
 struct HalfExtractedAirfoil {
-    stations: Vec<CamberStation>,
+    stations: Vec<ExtractStation>,
     circle: Option<Circle2>,
     point: Option<Point2<f64>>,
 }
 
+impl HalfExtractedAirfoil {
+    fn new(
+        stations: Vec<ExtractStation>,
+        circle: Option<Circle2>,
+        point: Option<Point2<f64>>,
+    ) -> HalfExtractedAirfoil {
+        HalfExtractedAirfoil {
+            stations,
+            circle,
+            point,
+        }
+    }
+}
+
+fn refine_between(
+    line: &Polyline<f64>,
+    s0: &ExtractStation,
+    s1: &ExtractStation,
+    outer_tol: f64,
+    inner_tol: f64,
+) -> Vec<ExtractStation> {
+    let mut stations = Vec::new();
+
+    let mid_ray = s0.spanning_ray.symmetry(&s1.spanning_ray);
+    if let Some(ray) = spanning_ray(&line, &mid_ray) {
+        let station = extract_station(&line, &ray, Some(inner_tol));
+
+        if deviation(&s0.upper, &s1.upper, &station.upper) <= outer_tol
+            && deviation(&s0.lower, &s1.lower, &station.lower) <= outer_tol
+            && deviation(&s0.cp(), &s1.cp(), &station.cp()) <= outer_tol
+        {
+            stations.push(station);
+        } else {
+            let mut fwd = refine_between(&line, &s0, &station, outer_tol, inner_tol);
+            let mut aft = refine_between(&line, &station, &s1, outer_tol, inner_tol);
+            stations.append(&mut fwd);
+            stations.push(station);
+            stations.append(&mut aft);
+        }
+    }
+
+    stations
+}
+
 fn mcl_extract_rough(
     line: &Polyline<f64>,
-    starting_ray: &Ray<f64>,
+    starting_ray: &SpanningRay,
     tol: Option<f64>,
 ) -> HalfExtractedAirfoil {
     /* This performs a rough extraction of the mean camber line on a closed contour starting at the
@@ -98,7 +195,7 @@ fn mcl_extract_rough(
     orthogonal direction until reaching the end of the airfoil in the given direction.
      */
 
-    let outer_tol = tol.unwrap_or(1e-4);
+    let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-1;
 
     let mut stations = Vec::new();
@@ -109,18 +206,21 @@ fn mcl_extract_rough(
         // the ray, which will yield the station.  However, in this case the station camber point
         // is the center of the inscribed circle, not the middle point between the upper and lower
         // surface points.
-        let station = find_center_point(&line, &ray, Some(inner_tol));
+        let station = extract_station(&line, &ray, Some(inner_tol));
+
+        // if let Some(last_station) = stations.last() {
+        //     let mut refined = refine_between(&line, last_station, &station, outer_tol, inner_tol);
+        //     stations.append(&mut refined);
+        // }
 
         // The contact ray goes from the lower point to the upper point, such that its length is
         // the thickness and its center is on the mean camber line. The camber ray starts at the
         // center of the contact ray (on the mean camber line) and points in the direction of the
         // camber line at this station, with its length being the thickness of the airfoil.
-        let contact_ray = Ray::new(station.lower.clone(), station.upper - station.lower);
-        let camber_ray = Ray::new(contact_ray.point_at(0.5), contact_ray.orthogonal());
-
-        // Get the inscribed circle
-        let circle = Circle2::from_point(station.camber.clone(), dist(&station.camber, &station.upper));
-        stations.push(station);
+        let contact_ray = station.contact_ray();
+        let camber_ray = station.camber_ray();
+        // println!("{:?}", camber_ray);
+        let circle = station.circle.clone();
 
         // Now we want to find the distance to the end of the airfoil in this direction. As we get
         // close to the leading or trailing edge, this distance will converge with the current
@@ -133,27 +233,37 @@ fn mcl_extract_rough(
         // the farthest forward point, and second the intersection point of the camber ray with
         // the section itself will converge towards being on the inscribed circle of the station.
 
+        // println!("{} >= {}", half_thickness, to_farthest);
         if half_thickness >= to_farthest {
             if let Some(t) = max_intersection(&line, &camber_ray) {
                 // We have a forward intersection
                 let end_point = camber_ray.point_at(t);
 
-                // Check if we have converged
-                if (dist(&end_point, &circle.center) - circle.ball.radius).abs() < outer_tol {
-                    return HalfExtractedAirfoil{stations, circle: Some(circle), point: Some(end_point)};
+                /* The possible ending conditions are:
+                   1. We have a contact circle with less than a 60 degree angle, indicating that
+                       we probably have a leading edge radius
+                   2. We have a point
+                   3. We have a squared end
+                */
+                // println!("{:?}", circle.center);
+
+                // Check for square ending condition first
+
+                // Check for leading edge radius
+                // println!("{}", station.contact_angle());
+                if station.contact_angle().abs() < std::f64::consts::PI / 3.0 {
+                    stations.push(station);
+                    return HalfExtractedAirfoil::new(stations, Some(circle), Some(end_point));
                 }
+
+                // Check if we have converged
+                if (dist(&end_point, &circle.center) - circle.ball.radius).abs() < outer_tol {}
             }
         }
 
-        // // circle center will drive
-        // // trying to normally advance we
-        // println!("{} >= {}", half_thickness, to_farthest);
-        // if half_thickness >= to_farthest * 1.5 {
-        //     println!("break");
-        //     break
-        // }
+        stations.push(station);
 
-        let advance_by = half_thickness.max(to_farthest) * 0.5;
+        let advance_by = half_thickness.min(to_farthest);
         if let Some(next_ray) = spanning_ray_advance(&line, &camber_ray, advance_by) {
             ray = next_ray;
             continue;
@@ -163,7 +273,7 @@ fn mcl_extract_rough(
         }
     }
 
-    HalfExtractedAirfoil{stations, circle: None, point: None}
+    HalfExtractedAirfoil::new(stations, None, None)
 }
 
 pub fn analyze_airfoil(points: &Vec<Point2<f64>>, join_tol: Option<f64>) {
@@ -221,7 +331,7 @@ pub fn analyze_airfoil(points: &Vec<Point2<f64>>, join_tol: Option<f64>) {
     for (i, s) in half.stations.iter().enumerate() {
         writeln!(file, "{{").unwrap();
 
-        write_point("camber", &s.camber, &mut file);
+        write_point("camber", &s.circle.center, &mut file);
         writeln!(file, ",").unwrap();
 
         write_point("upper", &s.upper, &mut file);
