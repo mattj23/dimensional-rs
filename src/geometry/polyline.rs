@@ -1,8 +1,14 @@
-use crate::geometry::distances2::{mid_point, signed_angle};
+use crate::geometry::distances2::{dist, mid_point, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
+
+pub fn cleaned_polyline(points: &Vec<Point2<f64>>, tol: f64) -> Polyline<f64> {
+    let mut vertices = points.to_vec();
+    vertices.dedup_by(|a, b| dist(&a, &b) <= tol);
+    Polyline::new(vertices, Option::None)
+}
 
 #[derive(Clone)]
 pub struct SpanningRay {
@@ -22,6 +28,10 @@ impl SpanningRay {
             mid_point(&self.ray.origin, &other.ray.origin),
             Isometry2::rotation(angle) * self.ray.dir,
         )
+    }
+
+    pub fn reversed(&self) -> SpanningRay {
+        SpanningRay::new(self.ray.point_at(1.0), self.ray.origin.clone())
     }
 }
 

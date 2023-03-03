@@ -1,4 +1,4 @@
-use dimensional_rs::airfoil::analyze::analyze_airfoil;
+use dimensional_rs::airfoil::analyze::{AfParams, analyze_airfoil};
 use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
 use ncollide2d::na::Point2;
 use std::fs::File;
@@ -9,7 +9,7 @@ fn main() {
     let airfoil = naca.generate(Some(1e-4));
     let outer_contour = airfoil.to_outer_contour();
 
-    analyze_airfoil(&outer_contour, Some(1e-3));
+    analyze_airfoil(&outer_contour, AfParams::default());
 
     // write_points(&airfoil.upper, "data/side0.txt").expect("Failed writing file side0.txt");
     // write_points(&airfoil.lower, "data/side1.txt").expect("Failed writing file side1.txt");
