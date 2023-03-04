@@ -57,7 +57,7 @@ impl<'a, N: RealField + Copy, T: Clone> RayVisitor<'a, N, T> {
             ray,
             collector: buffer,
             ix: N::one() / ray.dir.x,
-            iy: N::one() / ray.dir.y
+            iy: N::one() / ray.dir.y,
         }
     }
 }
@@ -112,13 +112,23 @@ mod tests {
     fn ray_aabb_test_intersect() {
         let aabb: AABB<f64> = AABB::new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.5));
         let ray: Ray<f64> = Ray::new(Point2::new(0.25, 1.0), Vector2::new(0.0, 1.0));
-        assert!(ray_intersects_aabb(&aabb, &ray, 1.0 / ray.dir.x, 1.0 / ray.dir.y));
+        assert!(ray_intersects_aabb(
+            &aabb,
+            &ray,
+            1.0 / ray.dir.x,
+            1.0 / ray.dir.y
+        ));
     }
 
     #[test]
     fn ray_aabb_test_miss() {
         let aabb: AABB<f64> = AABB::new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.5));
         let ray: Ray<f64> = Ray::new(Point2::new(1.25, 1.0), Vector2::new(0.0, 1.0));
-        assert!(!ray_intersects_aabb(&aabb, &ray, 1.0 / ray.dir.x, 1.0 / ray.dir.y));
+        assert!(!ray_intersects_aabb(
+            &aabb,
+            &ray,
+            1.0 / ray.dir.x,
+            1.0 / ray.dir.y
+        ));
     }
 }

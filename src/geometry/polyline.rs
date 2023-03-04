@@ -1,9 +1,9 @@
-use crate::geometry::aabb2::{RayVisitor};
+use crate::geometry::aabb2::RayVisitor;
 use crate::geometry::distances2::{dist, mid_point, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use crate::serialize::Ray2f64;
 use ncollide2d::na::{Isometry2, Point2, RealField, Vector2};
-use ncollide2d::partitioning::{Visitor};
+use ncollide2d::partitioning::Visitor;
 use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
@@ -178,9 +178,9 @@ mod tests {
 
         let line = sample_polyline();
 
-        for i in 60..360 {
+        for i in 1..360 {
             let ai = Isometry2::rotation(i as f64 / 180.0 * PI) * Point2::new(10.0, 0.0);
-            for j in 270..360 {
+            for j in 1..360 {
                 let aj = Isometry2::rotation(j as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
                 let ray = Ray::new(ai, aj);
 
