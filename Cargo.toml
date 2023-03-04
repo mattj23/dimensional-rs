@@ -15,6 +15,7 @@ itertools = "0.10.5"
 test-case = "3.0"
 approx = "0.5.1"
 criterion = "0.4.0"
+rand = "0.8.5"
 
 [[bench]]
 name = "intersections_2d"

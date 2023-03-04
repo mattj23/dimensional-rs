@@ -8,13 +8,24 @@ use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
 use serde::Serialize;
+type Pl64 = Polyline<f64>;
 
-pub fn cleaned_polyline(points: &[Point2<f64>], tol: f64) -> Polyline<f64> {
-    let mut vertices = points.to_vec();
-    vertices.dedup_by(|a, b| dist(a, b) <= tol);
-    Polyline::new(vertices, Option::None)
+pub trait PolylineExtensions {
+    fn from_cleaned_points(points: &[Point2<f64>], tol: f64) -> Pl64 {
+        let mut vertices = points.to_vec();
+        vertices.dedup_by(|a, b| dist(a, b) <= tol);
+        Polyline::new(vertices, Option::None)
+    }
 }
 
+impl PolylineExtensions for Pl64 {}
+
+// pub fn cleaned_polyline(points: &[Point2<f64>], tol: f64) -> Polyline<f64> {
+//     let mut vertices = points.to_vec();
+//     vertices.dedup_by(|a, b| dist(a, b) <= tol);
+//     Polyline::new(vertices, Option::None)
+// }
+//
 #[derive(Clone, Serialize)]
 pub struct SpanningRay {
     #[serde(with = "Ray2f64")]

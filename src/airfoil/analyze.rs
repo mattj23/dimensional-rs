@@ -1,7 +1,7 @@
 use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
 use crate::geometry::line2::Line2;
 use crate::geometry::polyline::{
-    cleaned_polyline, farthest_point_direction_distance, spanning_ray, SpanningRay,
+    farthest_point_direction_distance, spanning_ray, PolylineExtensions, SpanningRay,
 };
 use crate::geometry::shapes2::Circle2;
 use crate::serialize::{Point2f64, VectorList2f64};
@@ -271,7 +271,7 @@ struct DebugData {
 }
 
 pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
-    let line = cleaned_polyline(points, params.tol);
+    let line = Polyline::from_cleaned_points(points, params.tol);
     let hull = ConvexPolygon::try_from_points(points).unwrap();
 
     let (i0, i1) = farthest_pair_indices(&hull);
