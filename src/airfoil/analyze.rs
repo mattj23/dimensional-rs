@@ -4,7 +4,7 @@ use crate::geometry::polyline::{
     cleaned_polyline, farthest_point_direction_distance, spanning_ray, SpanningRay,
 };
 use crate::geometry::shapes2::Circle2;
-use crate::serialize::Point2f64;
+use crate::serialize::{Point2f64, VectorList2f64};
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
@@ -265,6 +265,12 @@ fn extract_half_camber_line(
     stations
 }
 
+#[derive(Serialize)]
+struct DebugData {
+    stations: Vec<ExtractStation>,
+    line: VectorList2f64
+}
+
 pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
     let line = cleaned_polyline(points, params.tol);
     let hull = ConvexPolygon::try_from_points(points).unwrap();
@@ -282,7 +288,11 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
-    let s = serde_json::to_string(&stations).expect("Failed to serialize");
+    let data = DebugData {
+        stations,
+        line: VectorList2f64::from_points(line.points())
+    };
+    let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s).unwrap();
 
 }
