@@ -4,9 +4,9 @@ use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
 
-pub fn cleaned_polyline(points: &Vec<Point2<f64>>, tol: f64) -> Polyline<f64> {
+pub fn cleaned_polyline(points: &[Point2<f64>], tol: f64) -> Polyline<f64> {
     let mut vertices = points.to_vec();
-    vertices.dedup_by(|a, b| dist(&a, &b) <= tol);
+    vertices.dedup_by(|a, b| dist(a, b) <= tol);
     Polyline::new(vertices, Option::None)
 }
 
@@ -31,17 +31,17 @@ impl SpanningRay {
     }
 
     pub fn reversed(&self) -> SpanningRay {
-        SpanningRay::new(self.ray.point_at(1.0), self.ray.origin.clone())
+        SpanningRay::new(self.ray.point_at(1.0), self.ray.origin)
     }
 }
 
 impl Line2 for SpanningRay {
     fn origin(&self) -> Point2<f64> {
-        self.ray.origin.clone()
+        self.ray.origin
     }
 
     fn dir(&self) -> Vector2<f64> {
-        self.ray.dir.clone()
+        self.ray.dir
     }
 
     fn at(&self, t: f64) -> Point2<f64> {
@@ -57,8 +57,8 @@ pub fn ray_intersect_with_edge(
     let v0 = line.points()[line.edges()[edge_index].indices.x];
     let v1 = line.points()[line.edges()[edge_index].indices.y];
     let edge_ray = Ray::new(v0, v1 - v0);
-    if let Some((t0, t1)) = intersect_rays(&ray, &edge_ray) {
-        if t1 >= 0.0 && t1 <= 1.0 {
+    if let Some((t0, t1)) = intersect_rays(ray, &edge_ray) {
+        if (0.0..=1.0).contains(&t1) {
             Some(t0)
         } else {
             None
@@ -80,7 +80,7 @@ pub fn naive_ray_intersections(line: &Polyline<f64>, ray: &Ray<f64>) -> Vec<f64>
 }
 
 pub fn max_intersection(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<f64> {
-    let ts = naive_ray_intersections(&line, &ray);
+    let ts = naive_ray_intersections(line, ray);
     ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).cloned()
 }
 
@@ -103,7 +103,7 @@ pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -
 /// there are no additional intersections between them. The spanning ray will have the same
 /// direction as the original intersection ray.
 pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<SpanningRay> {
-    let mut results = naive_ray_intersections(&line, ray);
+    let mut results = naive_ray_intersections(line, ray);
     results.sort_by(|a, b| a.partial_cmp(b).unwrap());
     if results.len() == 2 {
         Some(SpanningRay::new(

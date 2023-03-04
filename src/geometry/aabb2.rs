@@ -3,10 +3,10 @@ use ncollide2d::na::{Point2, RealField};
 use ncollide2d::query::Ray;
 
 /// Returns an array with the four corner points of an AABB
-fn aabb_points<N: RealField + Copy>(b: &AABB<N>) -> [Point2<N>; 4] {
+pub fn aabb_points<N: RealField + Copy>(b: &AABB<N>) -> [Point2<N>; 4] {
     [
-        b.maxs.clone(),
-        b.mins.clone(),
+        b.maxs,
+        b.mins,
         Point2::new(b.mins.x, b.maxs.y),
         Point2::new(b.maxs.x, b.mins.y),
     ]

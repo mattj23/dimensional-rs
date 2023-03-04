@@ -1,39 +1,43 @@
-use super::CamberStation;
-use crate::closed_polyline::ClosedPolyline;
-use crate::geometry::distances2::{
-    closest_angle, deviation, dist, farthest_pair_indices, mid_point, signed_angle,
-};
+use crate::airfoil::analyze::EdgeDetect::Auto;
+use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
 use crate::geometry::line2::Line2;
-use crate::geometry::polyline::{cleaned_polyline, farthest_point_direction_distance, max_intersection, spanning_ray, SpanningRay};
+use crate::geometry::polyline::{
+    cleaned_polyline, farthest_point_direction_distance, spanning_ray, SpanningRay,
+};
 use crate::geometry::shapes2::Circle2;
 use ncollide2d::math::Isometry;
-use ncollide2d::na::{Point2, Vector2};
+use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
 use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::fs::File;
 use std::io::Write;
-use crate::airfoil::analyze::EdgeDetect::Auto;
 
 pub enum EdgeDetect {
     Auto,
     Circle,
     Square,
-    Point
+    Point,
 }
 
 pub struct AfParams {
     pub tol: f64,
     pub leading: EdgeDetect,
-    pub trailing: EdgeDetect
+    pub trailing: EdgeDetect,
+}
+
+impl Default for AfParams {
+    fn default() -> Self {
+        AfParams::new(1e-3, Auto, Auto)
+    }
 }
 
 impl AfParams {
-    pub fn new(tol: f64, leading: EdgeDetect, trailing: EdgeDetect) -> AfParams {
-        AfParams {tol, leading, trailing}
-    }
-
-    pub fn default() -> AfParams{
-        AfParams::new(1e-3, Auto, Auto)
+    pub fn new(tol: f64, leading: EdgeDetect, trailing: EdgeDetect) -> Self {
+        AfParams {
+            tol,
+            leading,
+            trailing,
+        }
     }
 }
 
@@ -50,7 +54,7 @@ struct ExtractStation {
     upper: Point2<f64>,
     lower: Point2<f64>,
     circle: Circle2,
-    thk: f64
+    thk: f64,
 }
 
 impl ExtractStation {
@@ -66,25 +70,30 @@ impl ExtractStation {
             upper,
             lower,
             circle,
-            thk
+            thk,
         }
     }
 
-    fn reversed(&self) -> ExtractStation {
-        ExtractStation::new(self.spanning_ray.reversed(), self.lower.clone(), self.upper.clone(), self.circle.clone())
+    pub fn reversed(&self) -> ExtractStation {
+        ExtractStation::new(
+            self.spanning_ray.reversed(),
+            self.lower,
+            self.upper,
+            self.circle.clone(),
+        )
     }
 
-    fn upper_dir(&self) -> Vector2<f64> {
-        self.upper - self.circle.center
-    }
+    // pub fn upper_dir(&self) -> Vector2<f64> {
+    //     self.upper - self.circle.center
+    // }
 
-    fn lower_dir(&self) -> Vector2<f64> {
-        self.upper - self.circle.center
-    }
+    // pub fn lower_dir(&self) -> Vector2<f64> {
+    //     self.upper - self.circle.center
+    // }
 
-    fn contact_angle(&self) -> f64 {
-        closest_angle(&self.upper_dir(), &self.lower_dir())
-    }
+    // fn contact_angle(&self) -> f64 {
+    //     closest_angle(&self.upper_dir(), &self.lower_dir())
+    // }
 
     /// Calculates the camber point between the upper and lower points
     fn cp(&self) -> Point2<f64> {
@@ -92,7 +101,7 @@ impl ExtractStation {
     }
 
     fn contact_ray(&self) -> Ray<f64> {
-        Ray::new(self.lower.clone(), self.upper - self.lower)
+        Ray::new(self.lower, self.upper - self.lower)
     }
 
     fn camber_ray(&self) -> Ray<f64> {
@@ -127,7 +136,7 @@ fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) ->
     let mut positive = MeanSearchState::new(1.0, ray.at(1.0));
     let mut negative = MeanSearchState::new(0.0, ray.at(0.0));
 
-    let mut working = ray.at(0.5);
+    let mut working;
 
     while (positive.fraction - negative.fraction) * ray.dir().norm() > tol_value {
         // println!("{}, {}", positive.fraction, negative.fraction);
@@ -139,9 +148,9 @@ fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) ->
         let to_closest = closest.point - working;
         let distance = dist(&working, &closest.point);
         if to_closest.dot(&ray.dir()) > 0.0 {
-            positive.update(fraction, distance, closest.point.clone());
+            positive.update(fraction, distance, closest.point);
         } else {
-            negative.update(fraction, distance, closest.point.clone());
+            negative.update(fraction, distance, closest.point);
         }
     }
 
@@ -162,7 +171,7 @@ fn spanning_ray_advance(
     let mut advance = 0.25;
     while advance >= 0.05 {
         let test_ray = Ray::new(camber_ray.point_at(d * advance), -camber_ray.orthogonal());
-        if let Some(ray) = spanning_ray(&line, &test_ray) {
+        if let Some(ray) = spanning_ray(line, &test_ray) {
             if ray.dir().norm() < min_tol {
                 advance -= 0.05;
             } else {
@@ -186,8 +195,8 @@ fn refine_between(
     let mut stations = Vec::new();
 
     let mid_ray = s0.spanning_ray.symmetry(&s1.spanning_ray);
-    if let Some(ray) = spanning_ray(&line, &mid_ray) {
-        let station = extract_station(&line, &ray, Some(inner_tol));
+    if let Some(ray) = spanning_ray(line, &mid_ray) {
+        let station = extract_station(line, &ray, Some(inner_tol));
 
         if deviation(&s0.upper, &s1.upper, &station.upper) <= outer_tol
             && deviation(&s0.lower, &s1.lower, &station.lower) <= outer_tol
@@ -195,8 +204,8 @@ fn refine_between(
         {
             stations.push(station);
         } else {
-            let mut fwd = refine_between(&line, &s0, &station, outer_tol, inner_tol);
-            let mut aft = refine_between(&line, &station, &s1, outer_tol, inner_tol);
+            let mut fwd = refine_between(line, s0, &station, outer_tol, inner_tol);
+            let mut aft = refine_between(line, &station, s1, outer_tol, inner_tol);
             stations.append(&mut fwd);
             stations.push(station);
             stations.append(&mut aft);
@@ -221,10 +230,10 @@ fn extract_half_camber_line(
     let mut ray = starting_ray.clone();
 
     loop {
-        let station = extract_station(&line, &ray, Some(inner_tol));
+        let station = extract_station(line, &ray, Some(inner_tol));
 
         if let Some(last_station) = stations.last() {
-            let mut refined = refine_between(&line, last_station, &station, outer_tol, inner_tol);
+            let mut refined = refine_between(line, last_station, &station, outer_tol, inner_tol);
             stations.append(&mut refined);
         }
 
@@ -232,7 +241,7 @@ fn extract_half_camber_line(
         // close to the leading or trailing edge, this distance will converge with the current
         // radius of the inscribed circle.
         let camber_ray = station.camber_ray();
-        let to_farthest = farthest_point_direction_distance(&line, &camber_ray);
+        let to_farthest = farthest_point_direction_distance(line, &camber_ray);
         let half_thickness = station.thk * 0.5;
 
         stations.push(station);
@@ -243,7 +252,7 @@ fn extract_half_camber_line(
 
         let advance_by = half_thickness.min(to_farthest);
         let advance_tol = outer_tol * 10.0;
-        if let Some(next_ray) = spanning_ray_advance(&line, &camber_ray, advance_by, advance_tol) {
+        if let Some(next_ray) = spanning_ray_advance(line, &camber_ray, advance_by, advance_tol) {
             ray = next_ray;
             continue;
         } else {
@@ -255,21 +264,21 @@ fn extract_half_camber_line(
     stations
 }
 
-pub fn analyze_airfoil(points: &Vec<Point2<f64>>, params: AfParams) {
-    let line = cleaned_polyline(&points, params.tol);
-    let hull = ConvexPolygon::try_from_points(&points).unwrap();
+pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
+    let line = cleaned_polyline(points, params.tol);
+    let hull = ConvexPolygon::try_from_points(points).unwrap();
 
-    write_points(&line.points(), "data/outer_contour.txt").unwrap();
+    write_points(line.points(), "data/outer_contour.txt").unwrap();
 
     let (i0, i1) = farthest_pair_indices(&hull);
-    let rough_chord = Ray::new( hull.points()[i0], hull.points()[i1] - hull.points()[i0] );
+    let rough_chord = Ray::new(hull.points()[i0], hull.points()[i1] - hull.points()[i0]);
 
     // Create the initial intersections
     let mid_ray = Ray::new(rough_chord.point_at(0.5), rough_chord.orthogonal());
     let spanning = spanning_ray(&line, &mid_ray).expect("Failed on middle ray");
 
     let mut stations = extract_half_camber_line(&line, &spanning, None);
-    let mut half = extract_half_camber_line(&line, &spanning.reversed(), None);
+    let half = extract_half_camber_line(&line, &spanning.reversed(), None);
     stations.reverse();
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 

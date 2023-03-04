@@ -1,8 +1,5 @@
-use dimensional_rs::airfoil::analyze::{AfParams, analyze_airfoil};
+use dimensional_rs::airfoil::analyze::{analyze_airfoil, AfParams};
 use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
-use ncollide2d::na::Point2;
-use std::fs::File;
-use std::io::Write;
 
 fn main() {
     let naca = Naca4Digit::new(0.12, 4.0, 0.3, 0.4);

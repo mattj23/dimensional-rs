@@ -1,7 +1,5 @@
 use crate::geometry::distances2::dist;
-use crate::geometry::polyline::naive_ray_intersections;
 use ncollide2d::na::Point2;
-use ncollide2d::query::Ray;
 use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::error::Error;
 
