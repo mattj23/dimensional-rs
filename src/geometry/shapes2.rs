@@ -1,9 +1,14 @@
+use crate::serialize::{Ballf64, Point2f64};
 use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::shape::Ball;
+use serde::Serialize;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Circle2 {
+    #[serde(with = "Point2f64")]
     pub center: Point2<f64>,
+
+    #[serde(with = "Ballf64")]
     pub ball: Ball<f64>,
 }
 

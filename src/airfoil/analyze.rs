@@ -1,14 +1,16 @@
-use crate::airfoil::analyze::EdgeDetect::Auto;
 use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
 use crate::geometry::line2::Line2;
 use crate::geometry::polyline::{
     cleaned_polyline, farthest_point_direction_distance, spanning_ray, SpanningRay,
 };
 use crate::geometry::shapes2::Circle2;
+use crate::serialize::Point2f64;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
 use ncollide2d::shape::{ConvexPolygon, Polyline};
+use serde::Serialize;
+use serde_json;
 use std::fs::File;
 use std::io::Write;
 
@@ -17,6 +19,7 @@ pub enum EdgeDetect {
     Circle,
     Square,
     Point,
+    Open,
 }
 
 pub struct AfParams {
@@ -27,7 +30,7 @@ pub struct AfParams {
 
 impl Default for AfParams {
     fn default() -> Self {
-        AfParams::new(1e-3, Auto, Auto)
+        AfParams::new(1e-3, EdgeDetect::Auto, EdgeDetect::Auto)
     }
 }
 
@@ -41,17 +44,15 @@ impl AfParams {
     }
 }
 
-fn write_points(v: &[Point2<f64>], file_name: &str) -> std::io::Result<()> {
-    let mut file = File::create(file_name)?;
-    for p in v.iter() {
-        writeln!(file, "{}, {}", &p.x, &p.y).expect("Failed writing line");
-    }
 
-    Ok(())
-}
+#[derive(Serialize)]
 struct ExtractStation {
     spanning_ray: SpanningRay,
+
+    #[serde(with = "Point2f64")]
     upper: Point2<f64>,
+
+    #[serde(with = "Point2f64")]
     lower: Point2<f64>,
     circle: Circle2,
     thk: f64,
@@ -268,8 +269,6 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
     let line = cleaned_polyline(points, params.tol);
     let hull = ConvexPolygon::try_from_points(points).unwrap();
 
-    write_points(line.points(), "data/outer_contour.txt").unwrap();
-
     let (i0, i1) = farthest_pair_indices(&hull);
     let rough_chord = Ray::new(hull.points()[i0], hull.points()[i1] - hull.points()[i0]);
 
@@ -283,35 +282,7 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
+    let s = serde_json::to_string(&stations).expect("Failed to serialize");
+    write!(file, "{}", s).unwrap();
 
-    writeln!(file, "{{").unwrap();
-    writeln!(file, "\"stations\": [").unwrap();
-
-    for (i, s) in stations.iter().enumerate() {
-        writeln!(file, "{{").unwrap();
-
-        write_point("camber", &s.circle.center, &mut file);
-        writeln!(file, ",").unwrap();
-
-        write_point("upper", &s.upper, &mut file);
-        writeln!(file, ",").unwrap();
-
-        write_point("lower", &s.lower, &mut file);
-        // writeln!(file, ",").unwrap();
-        // writeln!(file, "\"rad\": {}", rads[i]).unwrap();
-
-        writeln!(file, "}}").unwrap();
-
-        if i < stations.len() - 1 {
-            writeln!(file, ",").unwrap()
-        }
-    }
-    writeln!(file, "]").unwrap();
-    writeln!(file, "}}").unwrap();
-
-    // write_points(&ints, "data/ints.txt").unwrap();
-}
-
-fn write_point(name: &str, point: &Point2<f64>, file: &mut File) {
-    write!(file, "\"{}\": [{}, {}]", name, point.x, point.y).unwrap()
 }

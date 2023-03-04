@@ -1,8 +1,10 @@
 use crate::geometry::distances2::{dist, mid_point, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
+use crate::serialize::Ray2f64;
 use ncollide2d::na::{Isometry2, Point2, Vector2};
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
+use serde::Serialize;
 
 pub fn cleaned_polyline(points: &[Point2<f64>], tol: f64) -> Polyline<f64> {
     let mut vertices = points.to_vec();
@@ -10,8 +12,9 @@ pub fn cleaned_polyline(points: &[Point2<f64>], tol: f64) -> Polyline<f64> {
     Polyline::new(vertices, Option::None)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct SpanningRay {
+    #[serde(with = "Ray2f64")]
     ray: Ray<f64>,
 }
 

@@ -6,7 +6,7 @@ fn main() {
     let airfoil = naca.generate(Some(1e-4));
     let outer_contour = airfoil.to_outer_contour();
 
-    analyze_airfoil(&outer_contour, AfParams::default());
+    let result = analyze_airfoil(&outer_contour, AfParams::default());
 
     // write_points(&airfoil.upper, "data/side0.txt").expect("Failed writing file side0.txt");
     // write_points(&airfoil.lower, "data/side1.txt").expect("Failed writing file side1.txt");
