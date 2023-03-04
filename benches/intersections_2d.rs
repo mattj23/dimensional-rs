@@ -6,10 +6,10 @@ use ncollide2d::shape::Polyline;
 use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
 use dimensional_rs::geometry::polyline::{cleaned_polyline, intersections};
 
-fn polyline_intersections(line: &Polyline<f64>, rays: &[Ray<f64>]) -> Vec<f64> {
+fn polyline_intersections(line: &Polyline<f64>, rays: &[Ray<f64>]) -> Vec<(f64, usize)> {
     let mut results = Vec::new();
     for ray in rays.iter() {
-        results.append(&mut intersections(line, ray))
+        results.append(&mut intersections(line, ray));
     }
 
     results

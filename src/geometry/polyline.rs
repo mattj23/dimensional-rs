@@ -1,10 +1,10 @@
-use crate::geometry::aabb2::{ray_intersects_aabb, RayVisitor};
+use crate::geometry::aabb2::{RayVisitor};
 use crate::geometry::distances2::{dist, mid_point, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use crate::serialize::Ray2f64;
-use ncollide2d::bounding_volume::AABB;
 use ncollide2d::na::{Isometry2, Point2, RealField, Vector2};
-use ncollide2d::partitioning::{VisitStatus, Visitor, BVH};
+use ncollide2d::partitioning::{Visitor};
+use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
 use serde::Serialize;
