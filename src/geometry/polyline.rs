@@ -75,7 +75,7 @@ pub fn ray_intersect_with_edge<N: RealField + Copy>(
 }
 
 pub fn max_intersection(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<f64> {
-    let ts = intersections(line, ray);
+    let ts: Vec<f64> = intersections(line, ray).iter().map(|(t, _)| *t).collect();
     ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).cloned()
 }
 
@@ -99,25 +99,25 @@ pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -
 /// direction as the original intersection ray.
 pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<SpanningRay> {
     let mut results = intersections(line, ray);
-    results.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    results.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     if results.len() == 2 {
         Some(SpanningRay::new(
-            ray.point_at(results[0]),
-            ray.point_at(results[1]),
+            ray.point_at(results[0].0),
+            ray.point_at(results[1].0),
         ))
     } else {
         None
     }
 }
 
-pub fn intersections<N: RealField + Copy>(polyline: &Polyline<N>, ray: &Ray<N>) -> Vec<N> {
-    let mut results: Vec<N> = Vec::new();
-    let mut collector: Vec<usize> = Vec::new();
+pub fn intersections<N: RealField + Copy>(polyline: &Polyline<N>, ray: &Ray<N>) -> Vec<(N, usize)> {
+    let mut results = Vec::new();
+    let mut collector = Vec::new();
     let mut visitor = RayVisitor::new(ray, &mut collector);
     polyline.bvt().visit(&mut visitor);
     for i in collector.iter() {
         if let Some(t) = ray_intersect_with_edge(polyline, ray, *i) {
-            results.push(t);
+            results.push((t, *i));
         }
     }
 
@@ -185,7 +185,8 @@ mod tests {
                 let ray = Ray::new(ai, aj);
 
                 let mut naive = naive_ray_intersections(&line, &ray);
-                let mut fast = intersections(&line, &ray);
+                let mut fast: Vec<f64> =
+                    intersections(&line, &ray).iter().map(|(t, _)| *t).collect();
                 naive.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 fast.sort_by(|a, b| a.partial_cmp(b).unwrap());
 

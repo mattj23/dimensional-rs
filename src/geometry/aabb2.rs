@@ -23,7 +23,7 @@ pub fn ray_intersects_aabb<N: RealField + Copy>(b: &AABB<N>, r: &Ray<N>) -> bool
     // This is here because of issues getting the coincident slab edges to work
     if r.dir.x.abs() <= epsilon {
         r.origin.x + epsilon >= b.mins.x && r.origin.x - epsilon <= b.maxs.x
-    } else if r.dir.y.abs() <= epsilon{
+    } else if r.dir.y.abs() <= epsilon {
         r.origin.y + epsilon >= b.mins.y && r.origin.y - epsilon <= b.maxs.y
     } else {
         let x_inv = N::from_f64(1.0).unwrap() / r.dir.x;
@@ -97,7 +97,10 @@ mod tests {
     fn test_ray_on_slab_1() {
         let aabb: AABB<f64> = AABB::new(Point2::new(3.5, 0.0), Point2::new(5.0, 0.9));
 
-        let ray: Ray<f64> = Ray::new(Point2::new(5.0, 8.6602540378443855), Vector2::new(-1.8369701987210297e-16, -1.0));
+        let ray: Ray<f64> = Ray::new(
+            Point2::new(5.0, 8.6602540378443855),
+            Vector2::new(-1.8369701987210297e-16, -1.0),
+        );
         let result = ray_intersects_aabb(&aabb, &ray);
 
         assert!(result);
