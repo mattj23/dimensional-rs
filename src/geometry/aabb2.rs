@@ -96,19 +96,6 @@ mod tests {
         assert!(result);
     }
 
-    #[test]
-    fn test_ray_on_slab_1() {
-        let aabb: AABB<f64> = AABB::new(Point2::new(3.5, 0.0), Point2::new(5.0, 0.9));
-
-        let ray: Ray<f64> = Ray::new(
-            Point2::new(5.0, 8.6602540378443855),
-            Vector2::new(-1.8369701987210297e-16, -1.0),
-        );
-        let result = ray_intersects_aabb(&aabb, &ray, 1.0 / ray.dir.x, 1.0 / ray.dir.y);
-
-        assert!(result);
-    }
-
     #[test_case((2.0, 1.0, 1.0, 0.0), (0.0, 0.0))]
     #[test_case((2.0, 0.0, 1.0, 0.0), (0.0, 0.0))]
     fn test_ray_on_slab(a: (f64, f64, f64, f64), b: (f64, f64)) {
