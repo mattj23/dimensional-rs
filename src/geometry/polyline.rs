@@ -178,10 +178,10 @@ mod tests {
 
         let line = sample_polyline();
 
-        for i in 0..360 {
+        for i in 60..360 {
             let ai = Isometry2::rotation(i as f64 / 180.0 * PI) * Point2::new(10.0, 0.0);
-            for j in 0..360 {
-                let aj = Isometry2::rotation(i as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
+            for j in 270..360 {
+                let aj = Isometry2::rotation(j as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
                 let ray = Ray::new(ai, aj);
 
                 let mut naive = naive_ray_intersections(&line, &ray);

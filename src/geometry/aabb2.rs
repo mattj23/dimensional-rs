@@ -19,20 +19,28 @@ pub fn aabb_points<N: RealField + Copy>(b: &AABB<N>) -> [Point2<N>; 4] {
 /// Uses the fast, branchless method described by Tavian Barnes in his blog at
 /// https://tavianator.com/2011/ray_box.html
 pub fn ray_intersects_aabb<N: RealField + Copy>(b: &AABB<N>, r: &Ray<N>) -> bool {
-    let x_inv = N::from_f64(1.0).unwrap() / r.dir.x;
-    let y_inv = N::from_f64(1.0).unwrap() / r.dir.y;
-    let tx1 = (b.mins.x - r.origin.x) * x_inv;
-    let tx2 = (b.maxs.x - r.origin.x) * x_inv;
-    let mut t_min = tx1.min(tx2);
-    let mut t_max = tx1.max(tx2);
+    let epsilon = N::default_epsilon() * N::from_f64(10.0).unwrap();
+    // This is here because of issues getting the coincident slab edges to work
+    if r.dir.x.abs() <= epsilon {
+        r.origin.x + epsilon >= b.mins.x && r.origin.x - epsilon <= b.maxs.x
+    } else if r.dir.y.abs() <= epsilon{
+        r.origin.y + epsilon >= b.mins.y && r.origin.y - epsilon <= b.maxs.y
+    } else {
+        let x_inv = N::from_f64(1.0).unwrap() / r.dir.x;
+        let y_inv = N::from_f64(1.0).unwrap() / r.dir.y;
+        let tx1 = (b.mins.x - r.origin.x) * x_inv;
+        let tx2 = (b.maxs.x - r.origin.x) * x_inv;
+        let mut t_min = tx1.min(tx2);
+        let mut t_max = tx1.max(tx2);
 
-    let ty1 = (b.mins.y - r.origin.y) * y_inv;
-    let ty2 = (b.maxs.y - r.origin.y) * y_inv;
+        let ty1 = (b.mins.y - r.origin.y) * y_inv;
+        let ty2 = (b.maxs.y - r.origin.y) * y_inv;
 
-    t_min = t_min.max(ty1.min(ty2));
-    t_max = t_max.min(ty1.max(ty2));
+        t_min = t_min.max(ty1.min(ty2));
+        t_max = t_max.min(ty1.max(ty2));
 
-    t_max >= t_min
+        t_max >= t_min
+    }
 }
 
 /// A visitor which traverses a BVH looking for intersections with a ray. Different from the
@@ -72,7 +80,40 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ncollide2d::na::{Point2, Vector2};
+    use ncollide2d::na::{Isometry2, Point2, Vector2};
+    use test_case::test_case;
+
+    #[test]
+    fn test_ray_on_slab_0() {
+        let aabb: AABB<f64> = AABB::new(Point2::new(0.0, 0.0), Point2::new(1.0, 1.0));
+
+        let ray: Ray<f64> = Ray::new(Point2::new(2.0, 1.0), Vector2::new(1.0, 0.0));
+        let result = ray_intersects_aabb(&aabb, &ray);
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_ray_on_slab_1() {
+        let aabb: AABB<f64> = AABB::new(Point2::new(3.5, 0.0), Point2::new(5.0, 0.9));
+
+        let ray: Ray<f64> = Ray::new(Point2::new(5.0, 8.6602540378443855), Vector2::new(-1.8369701987210297e-16, -1.0));
+        let result = ray_intersects_aabb(&aabb, &ray);
+
+        assert!(result);
+    }
+
+    #[test_case((2.0, 1.0, 1.0, 0.0), (0.0, 0.0))]
+    #[test_case((2.0, 0.0, 1.0, 0.0), (0.0, 0.0))]
+    fn test_ray_on_slab(a: (f64, f64, f64, f64), b: (f64, f64)) {
+        let mut aabb: AABB<f64> = AABB::new(Point2::new(0.0, 0.0), Point2::new(1.0, 1.0));
+        aabb.transform_by(&Isometry2::translation(b.0, b.1));
+
+        let ray: Ray<f64> = Ray::new(Point2::new(a.0, a.1), Vector2::new(a.2, a.3));
+        let result = ray_intersects_aabb(&aabb, &ray);
+
+        assert!(result);
+    }
 
     #[test]
     fn ray_aabb_test_intersect() {
