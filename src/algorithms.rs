@@ -23,13 +23,11 @@ pub fn preceding_index_search<N: RealField + Copy>(slice: &[N], test_value: N) -
     a
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_case::test_case;
     use rand::prelude::*;
+    use test_case::test_case;
 
     fn naive(slice: &[f64], test_value: f64) -> usize {
         if slice.len() <= 1 || slice[1] > test_value {
@@ -74,7 +72,10 @@ mod tests {
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
             let count: usize = rng.gen_range(2..200);
-            let mut values: Vec<f64> = (0..count).into_iter().map(|_| rng.gen_range(-10.0..10.0)).collect();
+            let mut values: Vec<f64> = (0..count)
+                .into_iter()
+                .map(|_| rng.gen_range(-10.0..10.0))
+                .collect();
             values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
             for _ in 0..100 {
@@ -85,5 +86,4 @@ mod tests {
             }
         }
     }
-
 }

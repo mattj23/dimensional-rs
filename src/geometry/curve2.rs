@@ -1,6 +1,10 @@
+use crate::algorithms::preceding_index_search;
+use crate::errors::InvalidGeometry;
 use crate::geometry::distances2::dist;
 use ncollide2d::na::{Point2, Unit, Vector2};
 use ncollide2d::shape::Polyline;
+use std::error::Error;
+use std::ops::Index;
 
 type UnitVec2 = Unit<Vector2<f64>>;
 
@@ -12,7 +16,7 @@ pub struct Curve2 {
     normals: Vec<UnitVec2>,
     lengths: Vec<f64>,
     is_closed: bool,
-    tol: f64
+    tol: f64,
 }
 
 impl Curve2 {
@@ -33,12 +37,38 @@ impl Curve2 {
     /// be found by self.line.points[i] * f + self.line.points[i+1] * (1.0 - f), where i is the
     /// index and f is the f64
     fn at_length(&self, l: f64) -> (usize, f64) {
-        todo!()
+        let d = l.clamp(0.0, self.length());
+
+        // We know that we have at least two vertices, and that the index that will be returned is
+        // going to be between 0 and self.line.points.len() - 1. We can check the end cases first.
+        let index = preceding_index_search(&self.lengths, l);
+
+        if index == self.line.points().len() - 1 {
+            (index - 1, 0.0)
+        } else {
+            let f = (d - self.lengths[index]) / (self.lengths[index + 1] - self.lengths[index]);
+            (index, 1.0 - f)
+        }
     }
 
-    pub fn from_points(points: &[Point2<f64>], tol: f64, force_closed: bool) -> Self {
+    pub fn point_at(&self, l: f64) -> Point2<f64> {
+        let (i, f) = self.at_length(l);
+        let p = self.line.points()[i];
+        let v = self.line.points()[i + 1] - p;
+        p + (1.0 - f) * v
+    }
+
+    pub fn from_points(
+        points: &[Point2<f64>],
+        tol: f64,
+        force_closed: bool,
+    ) -> Result<Self, Box<dyn Error>> {
         let mut pts = points.to_vec();
         pts.dedup_by(|a, b| dist(a, b) <= tol);
+
+        if pts.len() < 2 {
+            return Err(Box::try_from(InvalidGeometry::NotEnoughPoints).unwrap());
+        }
 
         // Check if the curve is supposed to be closed
         if let (true, Some(start), Some(end)) = (force_closed, pts.first(), pts.last()) {
@@ -63,13 +93,13 @@ impl Curve2 {
             lengths.push(d + lengths.last().unwrap_or(&0.0));
         }
 
-        Curve2 {
+        Ok(Curve2 {
             line,
             normals,
             lengths,
             is_closed,
             tol,
-        }
+        })
     }
 
     pub fn edge_count(&self) -> usize {
@@ -79,9 +109,10 @@ impl Curve2 {
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_relative_eq;
     use super::*;
+    use approx::assert_relative_eq;
     use ncollide2d::na::Point2;
+    use test_case::test_case;
 
     fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -91,7 +122,6 @@ mod tests {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]
     }
 
-
     fn sample_points(p: &[(f64, f64)]) -> Vec<Point2<f64>> {
         p.iter().map(|(a, b)| Point2::new(*a, *b)).collect()
     }
@@ -99,7 +129,7 @@ mod tests {
     #[test]
     fn test_create_open() {
         let points = sample_points(&sample1());
-        let curve = Curve2::from_points(&points, 1e-6, false);
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
 
         assert!(!curve.is_closed());
         assert_relative_eq!(3.0, curve.length(), epsilon = 1e-10);
@@ -108,7 +138,7 @@ mod tests {
     #[test]
     fn test_create_force_closed() {
         let points = sample_points(&sample1());
-        let curve = Curve2::from_points(&points, 1e-6, true);
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
         assert!(curve.is_closed());
         assert_relative_eq!(4.0, curve.length(), epsilon = 1e-10);
@@ -117,9 +147,39 @@ mod tests {
     #[test]
     fn test_create_naturally_closed() {
         let points = sample_points(&sample2());
-        let curve = Curve2::from_points(&points, 1e-6, false);
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
 
         assert!(curve.is_closed());
         assert_relative_eq!(4.0, curve.length(), epsilon = 1e-10);
+    }
+
+    #[test_case(0.5, 0, 0.5)]
+    #[test_case(-0.5, 0, 1.0)]
+    #[test_case(0.0, 0, 1.0)]
+    #[test_case(5.0, 3, 0.0)]
+    #[test_case(2.0, 2, 1.0)]
+    #[test_case(2.25, 2, 0.75)]
+    fn test_lengths(l: f64, ei: usize, ef: f64) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+
+        let (i, f) = curve.at_length(l);
+        assert_eq!(ei, i);
+        assert_relative_eq!(ef, f, epsilon = 1e-8);
+    }
+
+    #[test_case(0.5, (0.5, 0.0))]
+    #[test_case(-0.5, (0.0, 0.0))]
+    #[test_case(0.0, (0.0, 0.0))]
+    #[test_case(5.0, (0.0, 0.0))]
+    #[test_case(2.0, (1.0, 1.0))]
+    #[test_case(2.25, (0.75, 1.0))]
+    fn test_points_at_length(l: f64, e: (f64, f64)) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+        let result = curve.point_at(l);
+
+        assert_relative_eq!(e.0, result.x, epsilon = 1e-8);
+        assert_relative_eq!(e.1, result.y, epsilon = 1e-8);
     }
 }
