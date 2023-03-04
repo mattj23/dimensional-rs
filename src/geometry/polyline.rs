@@ -1,7 +1,10 @@
+use crate::geometry::aabb2::{ray_intersects_aabb, RayVisitor};
 use crate::geometry::distances2::{dist, mid_point, signed_angle};
 use crate::geometry::line2::{intersect_rays, Line2};
 use crate::serialize::Ray2f64;
-use ncollide2d::na::{Isometry2, Point2, Vector2};
+use ncollide2d::bounding_volume::AABB;
+use ncollide2d::na::{Isometry2, Point2, RealField, Vector2};
+use ncollide2d::partitioning::{VisitStatus, Visitor, BVH};
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
 use serde::Serialize;
@@ -52,16 +55,16 @@ impl Line2 for SpanningRay {
     }
 }
 
-pub fn ray_intersect_with_edge(
-    line: &Polyline<f64>,
-    ray: &Ray<f64>,
+pub fn ray_intersect_with_edge<N: RealField + Copy>(
+    line: &Polyline<N>,
+    ray: &Ray<N>,
     edge_index: usize,
-) -> Option<f64> {
+) -> Option<N> {
     let v0 = line.points()[line.edges()[edge_index].indices.x];
     let v1 = line.points()[line.edges()[edge_index].indices.y];
     let edge_ray = Ray::new(v0, v1 - v0);
     if let Some((t0, t1)) = intersect_rays(ray, &edge_ray) {
-        if (0.0..=1.0).contains(&t1) {
+        if N::from_f64(0.0).unwrap() <= t1 && t1 <= N::from_f64(1.0).unwrap() {
             Some(t0)
         } else {
             None
@@ -71,19 +74,8 @@ pub fn ray_intersect_with_edge(
     }
 }
 
-pub fn naive_ray_intersections(line: &Polyline<f64>, ray: &Ray<f64>) -> Vec<f64> {
-    let mut results = Vec::new();
-    for (i, _) in line.edges().iter().enumerate() {
-        if let Some(point) = ray_intersect_with_edge(line, ray, i) {
-            results.push(point);
-        }
-    }
-
-    results
-}
-
 pub fn max_intersection(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<f64> {
-    let ts = naive_ray_intersections(line, ray);
+    let ts = intersections(line, ray);
     ts.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).cloned()
 }
 
@@ -106,7 +98,7 @@ pub fn farthest_point_direction_distance(line: &Polyline<f64>, ray: &Ray<f64>) -
 /// there are no additional intersections between them. The spanning ray will have the same
 /// direction as the original intersection ray.
 pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<SpanningRay> {
-    let mut results = naive_ray_intersections(line, ray);
+    let mut results = intersections(line, ray);
     results.sort_by(|a, b| a.partial_cmp(b).unwrap());
     if results.len() == 2 {
         Some(SpanningRay::new(
@@ -116,6 +108,20 @@ pub fn spanning_ray(line: &Polyline<f64>, ray: &Ray<f64>) -> Option<SpanningRay>
     } else {
         None
     }
+}
+
+pub fn intersections<N: RealField + Copy>(polyline: &Polyline<N>, ray: &Ray<N>) -> Vec<N> {
+    let mut results: Vec<N> = Vec::new();
+    let mut collector: Vec<usize> = Vec::new();
+    let mut visitor = RayVisitor::new(ray, &mut collector);
+    polyline.bvt().visit(&mut visitor);
+    for i in collector.iter() {
+        if let Some(t) = ray_intersect_with_edge(polyline, ray, *i) {
+            results.push(t);
+        }
+    }
+
+    results
 }
 
 #[cfg(test)]
@@ -153,6 +159,39 @@ mod tests {
         let r = Ray::new(Point2::new(a.0, a.1), Vector2::new(a.2, a.3));
         let result = farthest_point_direction_distance(&sample_polyline(), &r);
         assert_relative_eq!(d, result, epsilon = 1e-5);
+    }
+
+    fn naive_ray_intersections(line: &Polyline<f64>, ray: &Ray<f64>) -> Vec<f64> {
+        let mut results = Vec::new();
+        for (i, _) in line.edges().iter().enumerate() {
+            if let Some(point) = ray_intersect_with_edge(line, ray, i) {
+                results.push(point);
+            }
+        }
+
+        results
+    }
+
+    #[test]
+    fn test_intersections_against_naive() {
+        use std::f64::consts::PI;
+
+        let line = sample_polyline();
+
+        for i in 0..360 {
+            let ai = Isometry2::rotation(i as f64 / 180.0 * PI) * Point2::new(10.0, 0.0);
+            for j in 0..360 {
+                let aj = Isometry2::rotation(i as f64 / 180.0 * PI) * Vector2::new(1.0, 0.0);
+                let ray = Ray::new(ai, aj);
+
+                let mut naive = naive_ray_intersections(&line, &ray);
+                let mut fast = intersections(&line, &ray);
+                naive.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                fast.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+                assert_eq!(naive, fast);
+            }
+        }
     }
 
     fn sample_polyline() -> Polyline<f64> {

@@ -1,5 +1,6 @@
 use ncollide2d::bounding_volume::AABB;
 use ncollide2d::na::{Point2, RealField};
+use ncollide2d::partitioning::{VisitStatus, Visitor};
 use ncollide2d::query::Ray;
 
 /// Returns an array with the four corner points of an AABB
@@ -32,6 +33,40 @@ pub fn ray_intersects_aabb<N: RealField + Copy>(b: &AABB<N>, r: &Ray<N>) -> bool
     t_max = t_max.min(ty1.max(ty2));
 
     t_max >= t_min
+}
+
+/// A visitor which traverses a BVH looking for intersections with a ray. Different from the
+/// RayInterferenceCollector because it does not filter out intersections at negative parameters
+pub struct RayVisitor<'a, N: 'a + RealField + Copy, T: 'a> {
+    pub ray: &'a Ray<N>,
+    pub collector: &'a mut Vec<T>,
+}
+
+impl<'a, N: RealField + Copy, T: Clone> RayVisitor<'a, N, T> {
+    pub fn new(ray: &'a Ray<N>, buffer: &'a mut Vec<T>) -> RayVisitor<'a, N, T> {
+        RayVisitor {
+            ray,
+            collector: buffer,
+        }
+    }
+}
+
+impl<'a, N, T> Visitor<T, AABB<N>> for RayVisitor<'a, N, T>
+where
+    N: RealField + Copy,
+    T: Clone,
+{
+    fn visit(&mut self, bv: &AABB<N>, t: Option<&T>) -> VisitStatus {
+        if ray_intersects_aabb(bv, self.ray) {
+            if let Some(t) = t {
+                self.collector.push(t.clone());
+            }
+
+            VisitStatus::Continue
+        } else {
+            VisitStatus::Stop
+        }
+    }
 }
 
 #[cfg(test)]

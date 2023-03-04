@@ -44,7 +44,6 @@ impl AfParams {
     }
 }
 
-
 #[derive(Serialize)]
 struct ExtractStation {
     spanning_ray: SpanningRay,
@@ -268,7 +267,7 @@ fn extract_half_camber_line(
 #[derive(Serialize)]
 struct DebugData {
     stations: Vec<ExtractStation>,
-    line: VectorList2f64
+    line: VectorList2f64,
 }
 
 pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
@@ -290,9 +289,8 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
         stations,
-        line: VectorList2f64::from_points(line.points())
+        line: VectorList2f64::from_points(line.points()),
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s).unwrap();
-
 }

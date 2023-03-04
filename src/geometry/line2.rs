@@ -20,7 +20,7 @@ pub fn intersection_param<N: RealField + Copy>(
     Some(((dy * bd.x - dx * bd.y) / det, (dy * ad.x - dx * ad.y) / det))
 }
 
-pub fn intersect_rays(r0: &Ray<f64>, r1: &Ray<f64>) -> Option<(f64, f64)> {
+pub fn intersect_rays<N: RealField + Copy>(r0: &Ray<N>, r1: &Ray<N>) -> Option<(N, N)> {
     intersection_param(&r0.origin, &r0.dir, &r1.origin, &r1.dir)
 }
 
