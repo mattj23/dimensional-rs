@@ -1,12 +1,18 @@
 use crate::algorithms::preceding_index_search;
 use crate::errors::InvalidGeometry;
-use crate::geometry::distances2::dist;
+use crate::geometry::distances2::{dist, signed_angle};
+use ncollide2d::math::Isometry;
 use ncollide2d::na::{Point2, Unit, Vector2};
 use ncollide2d::shape::Polyline;
 use std::error::Error;
 use std::ops::Index;
 
 type UnitVec2 = Unit<Vector2<f64>>;
+
+fn sym_unit_vec(a: &UnitVec2, b: &UnitVec2) -> UnitVec2 {
+    let t = signed_angle(a, b) * 0.5;
+    Isometry::rotation(t) * a
+}
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -20,6 +26,18 @@ pub struct Curve2 {
 }
 
 impl Curve2 {
+    fn first_n(&self) -> UnitVec2 {
+        self.line.edges().first().unwrap().normal.unwrap()
+    }
+
+    fn last_n(&self) -> UnitVec2 {
+        self.line.edges().last().unwrap().normal.unwrap()
+    }
+
+    fn last_vi(&self) -> usize {
+        self.line.points().len() - 1
+    }
+
     pub fn is_closed(&self) -> bool {
         self.is_closed
     }
@@ -56,6 +74,37 @@ impl Curve2 {
         let p = self.line.points()[i];
         let v = self.line.points()[i + 1] - p;
         p + (1.0 - f) * v
+    }
+
+    fn normal_at_vertex(&self, i: usize) -> UnitVec2 {
+        if self.is_closed && (i == 0 || i == self.last_vi()) {
+            sym_unit_vec(&self.first_n(), &self.last_n())
+        } else if i == 0 {
+            self.first_n()
+        } else if i == self.last_vi() {
+            self.last_n()
+        } else {
+            let n0 = self.line.edges()[i - 1].normal.unwrap();
+            let n1 = self.line.edges()[i].normal.unwrap();
+
+            sym_unit_vec(&n0, &n1)
+        }
+    }
+
+    pub fn normal_at(&self, l: f64) -> UnitVec2 {
+        let (i, f) = self.at_length(l);
+
+        if f <= self.tol {
+            self.normal_at_vertex(i)
+        } else if (f - 1.0).abs() <= self.tol {
+            self.normal_at_vertex(self.last_vi())
+        } else {
+            self.line.edges()[i].normal.unwrap()
+        }
+    }
+
+    pub fn point_at_fraction(&self, f: f64) -> Point2<f64> {
+        self.point_at(f / self.length())
     }
 
     pub fn from_points(
