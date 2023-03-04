@@ -95,9 +95,9 @@ impl Curve2 {
         let (i, f) = self.at_length(l);
 
         if f <= self.tol {
-            self.normal_at_vertex(i)
+            self.normal_at_vertex(i + 1)
         } else if (f - 1.0).abs() <= self.tol {
-            self.normal_at_vertex(self.last_vi())
+            self.normal_at_vertex(i)
         } else {
             self.line.edges()[i].normal.unwrap()
         }
@@ -230,5 +230,41 @@ mod tests {
 
         assert_relative_eq!(e.0, result.x, epsilon = 1e-8);
         assert_relative_eq!(e.1, result.y, epsilon = 1e-8);
+    }
+
+    #[test_case(0.0, (-1.0, -1.0))]
+    #[test_case(0.5, (0.0, -1.0))]
+    #[test_case(1.0, (1.0, -1.0))]
+    #[test_case(1.5, (1.0, 0.0))]
+    #[test_case(2.0, (1.0, 1.0))]
+    #[test_case(2.5, (0.0, 1.0))]
+    #[test_case(3.0, (-1.0, 1.0))]
+    #[test_case(3.5, (-1.0, 0.0))]
+    #[test_case(4.0, (-1.0, -1.0))]
+    fn test_normals_at_length_closed(l: f64, ec: (f64, f64)) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+        let e = UnitVec2::new_normalize(Vector2::new(ec.0, ec.1));
+        let n = curve.normal_at(l);
+
+        assert_relative_eq!(e.x, n.x, epsilon = 1e-8);
+        assert_relative_eq!(e.y, n.y, epsilon = 1e-8);
+    }
+
+    #[test_case(0.0, (0.0, -1.0))]
+    #[test_case(0.5, (0.0, -1.0))]
+    #[test_case(1.0, (1.0, -1.0))]
+    #[test_case(1.5, (1.0, 0.0))]
+    #[test_case(2.0, (1.0, 1.0))]
+    #[test_case(2.5, (0.0, 1.0))]
+    #[test_case(3.0, (0.0, 1.0))]
+    fn test_normals_at_length_open(l: f64, ec: (f64, f64)) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
+        let e = UnitVec2::new_normalize(Vector2::new(ec.0, ec.1));
+        let n = curve.normal_at(l);
+
+        assert_relative_eq!(e.x, n.x, epsilon = 1e-8);
+        assert_relative_eq!(e.y, n.y, epsilon = 1e-8);
     }
 }
