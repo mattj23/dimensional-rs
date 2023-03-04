@@ -5,7 +5,11 @@ use ncollide2d::math::Isometry;
 use ncollide2d::na::{Point2, Unit, Vector2};
 use ncollide2d::shape::Polyline;
 use std::error::Error;
-use std::ops::Index;
+use ncollide2d::partitioning::BVH;
+use ncollide2d::query::Ray;
+use crate::geometry::aabb2::{PointVisitor, SearchType};
+use crate::geometry::line2::Line2;
+
 
 type UnitVec2 = Unit<Vector2<f64>>;
 
@@ -91,6 +95,34 @@ impl Curve2 {
         }
     }
 
+    /// Finds the closest point on the curve to the query point, returning the index of the
+    /// edge and the location of the found point.
+    fn closest_point_to(&self, query: &Point2<f64>) -> (usize, Point2<f64>) {
+        let mut collected = Vec::new();
+        let mut visitor = PointVisitor::new(query, &mut collected, SearchType::Closest);
+        self.line.bvt().visit(&mut visitor);
+
+        let mut result: Option<(f64, usize, Point2<f64>)> = None;
+        for t in collected.iter() {
+            let e = &self.line.edges()[t.value];
+            let p0 = self.line.points()[e.indices.coords.x];
+            let p1 = self.line.points()[e.indices.coords.y];
+            let r = Ray::new(p0, p1 - p0);
+            let cp = r.point_at(r.projected_parameter(query).clamp(0.0, 1.0));
+            let d = dist(&cp, query);
+            if let Some(value) = result {
+                if d < value.0 {
+                    result = Some((d, t.value, cp));
+                }
+            } else {
+                result = Some((d, t.value, cp));
+            }
+        }
+
+        let value = result.unwrap();
+        (value.1, value.2)
+    }
+
     pub fn normal_at(&self, l: f64) -> UnitVec2 {
         let (i, f) = self.at_length(l);
 
@@ -173,6 +205,17 @@ mod tests {
 
     fn sample_points(p: &[(f64, f64)]) -> Vec<Point2<f64>> {
         p.iter().map(|(a, b)| Point2::new(*a, *b)).collect()
+    }
+
+    #[test]
+    fn test_closest_point() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+
+        let p = curve.closest_point_to(&Point2::new(2.0, 0.0));
+        assert!(p.0 == 0 || p.0 == 1);
+        assert_relative_eq!(1.0, p.1.x, epsilon = 1e-8);
+        assert_relative_eq!(0.0, p.1.y, epsilon = 1e-8);
     }
 
     #[test]
