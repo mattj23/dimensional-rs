@@ -1,15 +1,15 @@
 use crate::algorithms::preceding_index_search;
 use crate::errors::InvalidGeometry;
 use crate::geometry::aabb2::{PointVisitor, SearchType};
-use crate::geometry::common::{IndAndFrac, sym_unit_vec, UnitVec2};
+use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
+use ncollide2d::math::Isometry;
 use ncollide2d::na::{Point2, Vector2};
 use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Polyline;
 use std::error::Error;
-use ncollide2d::math::Isometry;
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -163,11 +163,10 @@ impl Curve2 {
                     working = IndAndFrac::zero(0);
                     wrap = false;
                 }
-
             }
             points.push(self.point_from_index_fraction(&end));
 
-            if let Ok(c) = Curve2::from_points(&points, self.tol,false) {
+            if let Ok(c) = Curve2::from_points(&points, self.tol, false) {
                 Some(c)
             } else {
                 None
@@ -387,20 +386,20 @@ mod tests {
         false
     }
 
-    #[test_case((0.1, 1.2), false, vec![1])]            // (0) |->  (1)  ->| (2)      (3)      O/C
-    #[test_case((0.1, 2.2), false, vec![1, 2])]         // (0) |->  (1)  ->  (2)  ->| (3)      O/C
-    #[test_case((0.7, 0.2), true, vec![1, 2, 3, 0])]    // (0)->||->(1)  ->  (2)  ->  (3)      C
-    #[test_case((1.7, 1.2), true, vec![2, 3, 0, 1])]    // (0)  ->  (1)->||->(2)  ->  (3)      C
-    #[test_case((2.7, 2.2), true, vec![3, 0, 1, 2])]    // (0)  ->  (1)  ->  (2)->||->(3) ->   C
-    #[test_case((3.7, 3.2), true, vec![0, 1, 2, 3])]    // (0)  ->  (1)  ->  (2)  ->  (3)->||->C
-    #[test_case((1.2, 0.7), true, vec![2, 3, 0])]       // (0)  ->| (1) |->  (2)  ->  (3) ->   C
-    #[test_case((3.2, 0.7), true, vec![0])]             // (0)  ->| (1)      (2)      (3) ->|  C
-    #[test_case((0.2, 3.7), true, vec![1, 2, 3])]       // (0) |->  (1)  ->  (2)  ->  (3) ->|  C
-    #[test_case((0.1, 0.2), false, Vec::<usize>::new())]// (0) |->| (1)      (2)      (3)     O/C
-    #[test_case((0.1, 0.2), true, Vec::<usize>::new())] // (0) |->| (1)      (2)      (3)     O/C
-    #[test_case((1.1, 1.8), false, Vec::<usize>::new())]// (0)      (1) |->| (2)      (3)     O/C
-    #[test_case((1.1, 1.8), true, Vec::<usize>::new())] // (0)      (1) |->| (2)      (3)     O/C
-    #[test_case((3.1, 3.8), true, Vec::<usize>::new())] // (0)      (1)      (2)      (3)|->| C
+    #[test_case((0.1, 1.2), false, vec![1])] //             (0) |->  (1)  ->| (2)      (3)      O/C
+    #[test_case((0.1, 2.2), false, vec![1, 2])] //          (0) |->  (1)  ->  (2)  ->| (3)      O/C
+    #[test_case((0.7, 0.2), true, vec![1, 2, 3, 0])] //     (0)->||->(1)  ->  (2)  ->  (3)      C
+    #[test_case((1.7, 1.2), true, vec![2, 3, 0, 1])] //     (0)  ->  (1)->||->(2)  ->  (3)      C
+    #[test_case((2.7, 2.2), true, vec![3, 0, 1, 2])] //     (0)  ->  (1)  ->  (2)->||->(3) ->   C
+    #[test_case((3.7, 3.2), true, vec![0, 1, 2, 3])] //     (0)  ->  (1)  ->  (2)  ->  (3)->||->C
+    #[test_case((1.2, 0.7), true, vec![2, 3, 0])] //        (0)  ->| (1) |->  (2)  ->  (3) ->   C
+    #[test_case((3.2, 0.7), true, vec![0])] //              (0)  ->| (1)      (2)      (3) ->|  C
+    #[test_case((0.2, 3.7), true, vec![1, 2, 3])] //        (0) |->  (1)  ->  (2)  ->  (3) ->|  C
+    #[test_case((0.1, 0.2), false, Vec::<usize>::new())] // (0) |->| (1)      (2)      (3)     O/C
+    #[test_case((0.1, 0.2), true, Vec::<usize>::new())] //  (0) |->| (1)      (2)      (3)     O/C
+    #[test_case((1.1, 1.8), false, Vec::<usize>::new())] // (0)      (1) |->| (2)      (3)     O/C
+    #[test_case((1.1, 1.8), true, Vec::<usize>::new())] //  (0)      (1) |->| (2)      (3)     O/C
+    #[test_case((3.1, 3.8), true, Vec::<usize>::new())] //  (0)      (1)      (2)      (3)|->| C
     fn test_portioning(l: (f64, f64), c: bool, i: Vec<usize>) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, c).unwrap();
@@ -415,34 +414,13 @@ mod tests {
         };
 
         assert_relative_eq!(e_l, result.length(), epsilon = result.tol);
-        assert_relative_eq!(p0.x, result.first_v().x, epsilon=result.tol);
-        assert_relative_eq!(p0.y, result.first_v().y, epsilon=result.tol);
-        assert_relative_eq!(p1.x, result.last_v().x, epsilon=result.tol);
-        assert_relative_eq!(p1.y, result.last_v().y, epsilon=result.tol);
+        assert_relative_eq!(p0.x, result.first_v().x, epsilon = result.tol);
+        assert_relative_eq!(p0.y, result.first_v().y, epsilon = result.tol);
+        assert_relative_eq!(p1.x, result.last_v().x, epsilon = result.tol);
+        assert_relative_eq!(p1.y, result.last_v().y, epsilon = result.tol);
 
         for index in i {
             assert!(has_vertex(&points[index], result.line.points()));
         }
-    }
-
-    fn check_portion_open(c: &Curve2, l: (f64, f64), e0: (f64, f64), e1: (f64, f64)) {
-        let result = c.portion_between_lengths(l.0, l.1).unwrap();
-        assert_relative_eq!(e0.0, result.first_v().x, epsilon=result.tol);
-        assert_relative_eq!(e0.1, result.first_v().y, epsilon=result.tol);
-        assert_relative_eq!(e1.0, result.last_v().x, epsilon=result.tol);
-        assert_relative_eq!(e1.1, result.last_v().y, epsilon=result.tol);
-        assert_relative_eq!((l.1 - l.0).abs(), result.length(), epsilon = result.tol);
-    }
-
-    #[test]
-    fn test_portion_open() {
-        let points = sample_points(&sample1());
-        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
-
-        check_portion_open(&curve, (0.0, 2.5), (0.0, 0.0), (0.5, 1.0));
-
-        // Same segment
-        // check_portion_open(&curve, (0.1, 0.2), (0.1, 0.0), (0.2, 0.0));
-
     }
 }

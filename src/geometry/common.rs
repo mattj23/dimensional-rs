@@ -1,7 +1,7 @@
-use std::cmp::Ordering;
 use crate::geometry::distances2::signed_angle;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::{Unit, Vector2};
+use std::cmp::Ordering;
 
 // TODO: Move these to a common module?
 pub type UnitVec2 = Unit<Vector2<f64>>;
@@ -19,21 +19,23 @@ pub struct IndAndFrac {
 
 impl IndAndFrac {
     pub fn new(i: usize, f: f64) -> Self {
-        Self { i, f: f.clamp(0.0, 1.0) }
+        Self {
+            i,
+            f: f.clamp(0.0, 1.0),
+        }
     }
 
     pub fn one(i: usize) -> Self {
-        Self {i, f: 1.0}
+        Self { i, f: 1.0 }
     }
 
     pub fn zero(i: usize) -> Self {
-        Self {i, f: 0.0}
+        Self { i, f: 0.0 }
     }
 
     pub fn next_zero(&self) -> Self {
         Self::zero(self.i + 1)
     }
-
 }
 
 impl Eq for IndAndFrac {}
@@ -62,5 +64,4 @@ impl Ord for IndAndFrac {
             self.f.partial_cmp(&other.f).unwrap()
         }
     }
-
 }
