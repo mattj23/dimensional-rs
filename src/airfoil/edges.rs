@@ -8,6 +8,3 @@ pub enum EdgeDetect {
     Point,
     Open,
 }
-
-
-

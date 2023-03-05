@@ -31,7 +31,8 @@ pub trait Line2 {
 
     fn projected_parameter(&self, p: &Point2<f64>) -> f64 {
         let n = p - self.origin();
-        self.dir().dot(&n)
+        // self.dir().dot(&n)
+        self.dir().dot(&n) / self.dir().dot(&self.dir())
     }
 
     fn projected_point(&self, p: &Point2<f64>) -> Point2<f64> {

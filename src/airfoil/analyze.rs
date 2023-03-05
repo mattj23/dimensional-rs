@@ -3,17 +3,17 @@ use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_po
 use crate::geometry::line2::Line2;
 use crate::geometry::polyline::{farthest_point_direction_distance, SpanningRay};
 use crate::geometry::shapes2::Circle2;
-use crate::serialize::{Point2f64, VectorList2f64};
+use crate::serialize::{Point2f64, points_to_string, VectorList2f64};
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
 
+use crate::airfoil::edges::EdgeDetect;
 use serde::Serialize;
 use serde_json;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
-use crate::airfoil::edges::EdgeDetect;
 
 pub struct AfParams {
     pub tol: f64,
@@ -23,7 +23,7 @@ pub struct AfParams {
 
 impl Default for AfParams {
     fn default() -> Self {
-        AfParams::new(1e-3, EdgeDetect::Auto, EdgeDetect::Auto)
+        AfParams::new(1e-4, EdgeDetect::Auto, EdgeDetect::Auto)
     }
 }
 
@@ -263,6 +263,8 @@ fn extract_half_camber_line(
 struct DebugData {
     stations: Vec<ExtractStation>,
     line: VectorList2f64,
+    end0: VectorList2f64,
+    end1: VectorList2f64,
 }
 
 pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), Box<dyn Error>> {
@@ -277,12 +279,15 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
     // Now deal with the leading and trailing edges
-
+    let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
+    let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
         stations,
         line: VectorList2f64::from_points(curve.line.points()),
+        end0: VectorList2f64::from_points(end0.line.points()),
+        end1: VectorList2f64::from_points(end1.line.points()),
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s)?;
@@ -290,7 +295,42 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
     Ok(())
 }
 
-fn create_curve_and_orient(points: &[Point2<f64>], params: &AfParams) -> Result<(Curve2, SpanningRay), Box<dyn Error>> {
+/// Given a full curve and the last station, portion out the
+fn extract_edge_data(curve: &Curve2, station: &ExtractStation, invert: bool) -> Option<Curve2> {
+    let edge_dir = if invert {
+        -station.camber_ray().dir.normalize()
+    } else {
+        station.camber_ray().dir.normalize()
+    };
+
+    println!("{}", points_to_string(curve.line.points()));
+
+    let l0 = curve.distance_along(&station.lower);
+    let l1 = curve.distance_along(&station.upper);
+
+    let t0 = curve.point_at(l0);
+    println!("l0: {}", l0);
+    println!("Lower:  {}, {}", station.lower.x, station.lower.y);
+    println!("Tested: {}, {}", t0.x, t0.y);
+
+    let t1 = curve.point_at(l1);
+    println!("l1: {}", l1);
+    println!("Upper:  {}, {}", station.upper.x, station.upper.y);
+    println!("Tested: {}, {}", t1.x, t1.y);
+
+    // If the direction of the curve at l0 is in the same direction as the edge direction, we do
+    // not need to swap the lengths while extracting the curve portion
+    if curve.direction_at(l0).dot(&edge_dir) > 0.0 {
+        curve.portion_between_lengths(l0, l1)
+    } else {
+        curve.portion_between_lengths(l1, l0)
+    }
+}
+
+fn create_curve_and_orient(
+    points: &[Point2<f64>],
+    params: &AfParams,
+) -> Result<(Curve2, SpanningRay), Box<dyn Error>> {
     let curve = Curve2::from_points(points, params.tol, false)?;
     let hull = curve.make_hull().expect("Failed to build convex hull");
 
@@ -309,10 +349,4 @@ fn create_curve_and_orient(points: &[Point2<f64>], params: &AfParams) -> Result<
     } else {
         Ok((curve, spanning))
     }
-}
-
-/// Given a full curve and the last station, portion out the
-fn extract_edge_data(curve: &Curve2, station: &ExtractStation, invert: bool) -> Option<Curve2> {
-
-    todo!()
 }

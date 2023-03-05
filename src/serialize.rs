@@ -2,7 +2,7 @@ use itertools::Itertools;
 use ncollide2d::na::{Point2, Vector2};
 use ncollide2d::query::Ray;
 use ncollide2d::shape::Ball;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Serialize)]
 #[serde(remote = "Point2<f64>")]
@@ -64,6 +64,25 @@ impl Serialize for VectorList2f64 {
         let s = format!("{}", self.vectors.iter().map(|v| v2_to_str(v)).format(";"));
         serializer.serialize_str(&s)
     }
+}
+
+pub fn points_to_string(points: &[Point2<f64>]) -> String {
+    format!("{}", points.iter().map(|v| v2_to_str(&v.coords)).format(";"))
+}
+
+pub fn points_from_str(s: &str) -> Vec<Point2<f64>> {
+    let mut raw = Vec::new();
+    for token in s.split(";") {
+        let mut pieces: [f64; 2] = [Default::default(); 2];
+        for pair in token.split(",").take(2).enumerate() {
+            pieces[pair.0] = pair
+                .1
+                .parse()
+                .expect("Couldn't parse a floating point value");
+        }
+        raw.push(Point2::new(pieces[0], pieces[1]));
+    }
+    raw
 }
 
 #[cfg(test)]

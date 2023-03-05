@@ -5,13 +5,13 @@ use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
 use crate::geometry::polyline::{spanning_ray, SpanningRay};
+use itertools::Itertools;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::error::Error;
-use itertools::Itertools;
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -116,7 +116,8 @@ impl Curve2 {
             let p0 = self.line.points()[e.indices.coords.x];
             let p1 = self.line.points()[e.indices.coords.y];
             let r = Ray::new(p0, p1 - p0);
-            let cp = r.point_at(r.projected_parameter(query).clamp(0.0, 1.0));
+            let r_t = r.projected_parameter(query);
+            let cp = r.point_at(r_t.clamp(0.0, 1.0));
             let d = dist(&cp, query);
             if let Some(value) = result {
                 if d < value.0 {
@@ -138,8 +139,8 @@ impl Curve2 {
     /// Projects the point onto the curve and returns the distance along the curve that the
     /// projected point is
     pub fn distance_along(&self, point: &Point2<f64>) -> f64 {
-        let (index, point) = self.closest_point_and_edge(point);
-        self.lengths[index] + dist(&point, &self.line.points()[index])
+        let (index, p) = self.closest_point_and_edge(point);
+        self.lengths[index] + dist(&p, &self.line.points()[index])
     }
 
     /// Returns a curve portion between the section at length l0 and l1. If the curve is not closed,
@@ -271,10 +272,12 @@ fn dir_from_normal(u: &UnitVec2) -> UnitVec2 {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::c_float;
     use super::*;
     use approx::assert_relative_eq;
     use ncollide2d::na::{Point2, Vector2};
     use test_case::test_case;
+    use crate::serialize::points_from_str;
 
     fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -286,6 +289,10 @@ mod tests {
 
     fn sample_points(p: &[(f64, f64)]) -> Vec<Point2<f64>> {
         p.iter().map(|(a, b)| Point2::new(*a, *b)).collect()
+    }
+
+    fn sample_points_scaled(p: &[(f64, f64)], f: f64) -> Vec<Point2<f64>> {
+        p.iter().map(|(a, b)| Point2::new(*a * f, *b * f)).collect()
     }
 
     #[test]
@@ -333,10 +340,10 @@ mod tests {
     #[test_case(2.0, 2, 0.0)]
     #[test_case(2.25, 2, 0.25)]
     fn test_lengths(l: f64, ei: usize, ef: f64) {
-        let points = sample_points(&sample1());
+        let points = sample_points_scaled(&sample1(), 0.5);
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
-        let r = curve.at_length(l);
+        let r = curve.at_length(l * 0.5);
         assert_eq!(ei, r.i);
         assert_relative_eq!(ef, r.f, epsilon = 1e-8);
     }
@@ -401,6 +408,21 @@ mod tests {
         false
     }
 
+    #[test_case(0.0)]
+    #[test_case(0.5)]
+    #[test_case(0.75)]
+    #[test_case(2.0)]
+    #[test_case(2.1)]
+    #[test_case(3.9)]
+    fn test_distance_along(l: f64) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
+        let p = curve.point_at(l);
+        let d = curve.distance_along(&p);
+
+        assert_relative_eq!(l, d, epsilon = 1e-6);
+    }
+
     #[test_case((0.1, 1.2), false, vec![1])] //             (0) |->  (1)  ->| (2)      (3)      O/C
     #[test_case((0.1, 2.2), false, vec![1, 2])] //          (0) |->  (1)  ->  (2)  ->| (3)      O/C
     #[test_case((0.7, 0.2), true, vec![1, 2, 3, 0])] //     (0)->||->(1)  ->  (2)  ->  (3)      C
@@ -437,5 +459,27 @@ mod tests {
         for index in i {
             assert!(has_vertex(&points[index], result.line.points()));
         }
+    }
+
+    #[test]
+    fn test_naca_issue() {
+        // l0: 0.061968421528170135
+        // Lower:  0.06208009487909469, 0.0031649020793192567
+        // Tested: 0.0595763602567424, 0.0020915926595290327
+        // l1: 9.707314721439039
+        // Upper:  -0.020415658216408356, 0.05938468508636321
+        // Tested: -0.018854469810085348, 0.08048418445726035
+
+        let points = points_from_str(include_str!("test_data/naca.txt"));
+        let curve = Curve2::from_points(&points, 1e-4, false).unwrap();
+
+        let lower = Point2::new(0.06208009487909469, 0.0031649020793192567);
+        // let upper = Point2::new( -0.020415658216408356, 0.05938468508636321);
+
+        let l = curve.distance_along(&lower);
+        let p = curve.point_at(l);
+
+        assert_relative_eq!(lower.x, p.x, epsilon = 2e-4);
+        assert_relative_eq!(lower.y, p.y, epsilon = 2e-4);
     }
 }

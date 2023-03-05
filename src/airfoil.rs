@@ -1,8 +1,8 @@
 use ncollide2d::na::Point2;
 
 pub mod analyze;
-pub mod generate;
 pub mod edges;
+pub mod generate;
 
 pub struct CamberStation {
     pub camber: Point2<f64>,
