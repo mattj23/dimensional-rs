@@ -1,26 +1,19 @@
+use crate::geometry::curve2::Curve2;
 use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
 use crate::geometry::line2::Line2;
-use crate::geometry::polyline::{
-    farthest_point_direction_distance, spanning_ray, PolylineExtensions, SpanningRay,
-};
+use crate::geometry::polyline::{farthest_point_direction_distance, SpanningRay};
 use crate::geometry::shapes2::Circle2;
 use crate::serialize::{Point2f64, VectorList2f64};
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
 use ncollide2d::query::{PointQuery, Ray};
-use ncollide2d::shape::{ConvexPolygon, Polyline};
+
 use serde::Serialize;
 use serde_json;
+use std::error::Error;
 use std::fs::File;
 use std::io::Write;
-
-pub enum EdgeDetect {
-    Auto,
-    Circle,
-    Square,
-    Point,
-    Open,
-}
+use crate::airfoil::edges::EdgeDetect;
 
 pub struct AfParams {
     pub tol: f64,
@@ -131,7 +124,7 @@ impl MeanSearchState {
     }
 }
 
-fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) -> ExtractStation {
+fn extract_station(curve: &Curve2, ray: &SpanningRay, tol: Option<f64>) -> ExtractStation {
     let tol_value = tol.unwrap_or(1e-5);
     let mut positive = MeanSearchState::new(1.0, ray.at(1.0));
     let mut negative = MeanSearchState::new(0.0, ray.at(0.0));
@@ -144,7 +137,9 @@ fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) ->
         let fraction = (positive.fraction + negative.fraction) * 0.5;
         working = ray.at(fraction);
 
-        let closest = line.project_point(&Isometry::identity(), &working, false);
+        let closest = curve
+            .line
+            .project_point(&Isometry::identity(), &working, false);
         let to_closest = closest.point - working;
         let distance = dist(&working, &closest.point);
         if to_closest.dot(&ray.dir()) > 0.0 {
@@ -163,7 +158,7 @@ fn extract_station(line: &Polyline<f64>, ray: &SpanningRay, tol: Option<f64>) ->
 }
 
 fn spanning_ray_advance(
-    line: &Polyline<f64>,
+    curve: &Curve2,
     camber_ray: &Ray<f64>,
     d: f64,
     min_tol: f64,
@@ -171,7 +166,7 @@ fn spanning_ray_advance(
     let mut advance = 0.25;
     while advance >= 0.05 {
         let test_ray = Ray::new(camber_ray.point_at(d * advance), -camber_ray.orthogonal());
-        if let Some(ray) = spanning_ray(line, &test_ray) {
+        if let Some(ray) = curve.spanning_ray(&test_ray) {
             if ray.dir().norm() < min_tol {
                 advance -= 0.05;
             } else {
@@ -186,7 +181,7 @@ fn spanning_ray_advance(
 }
 
 fn refine_between(
-    line: &Polyline<f64>,
+    curve: &Curve2,
     s0: &ExtractStation,
     s1: &ExtractStation,
     outer_tol: f64,
@@ -195,8 +190,8 @@ fn refine_between(
     let mut stations = Vec::new();
 
     let mid_ray = s0.spanning_ray.symmetry(&s1.spanning_ray);
-    if let Some(ray) = spanning_ray(line, &mid_ray) {
-        let station = extract_station(line, &ray, Some(inner_tol));
+    if let Some(ray) = curve.spanning_ray(&mid_ray) {
+        let station = extract_station(curve, &ray, Some(inner_tol));
 
         if deviation(&s0.upper, &s1.upper, &station.upper) <= outer_tol
             && deviation(&s0.lower, &s1.lower, &station.lower) <= outer_tol
@@ -204,8 +199,8 @@ fn refine_between(
         {
             stations.push(station);
         } else {
-            let mut fwd = refine_between(line, s0, &station, outer_tol, inner_tol);
-            let mut aft = refine_between(line, &station, s1, outer_tol, inner_tol);
+            let mut fwd = refine_between(curve, s0, &station, outer_tol, inner_tol);
+            let mut aft = refine_between(curve, &station, s1, outer_tol, inner_tol);
             stations.append(&mut fwd);
             stations.push(station);
             stations.append(&mut aft);
@@ -219,7 +214,7 @@ fn refine_between(
 /// starting spanning ray. This function will terminate when it gets within a half thickness from
 /// the furthest point in the camber line direction
 fn extract_half_camber_line(
-    line: &Polyline<f64>,
+    curve: &Curve2,
     starting_ray: &SpanningRay,
     tol: Option<f64>,
 ) -> Vec<ExtractStation> {
@@ -230,10 +225,10 @@ fn extract_half_camber_line(
     let mut ray = starting_ray.clone();
 
     loop {
-        let station = extract_station(line, &ray, Some(inner_tol));
+        let station = extract_station(curve, &ray, Some(inner_tol));
 
         if let Some(last_station) = stations.last() {
-            let mut refined = refine_between(line, last_station, &station, outer_tol, inner_tol);
+            let mut refined = refine_between(curve, last_station, &station, outer_tol, inner_tol);
             stations.append(&mut refined);
         }
 
@@ -241,7 +236,7 @@ fn extract_half_camber_line(
         // close to the leading or trailing edge, this distance will converge with the current
         // radius of the inscribed circle.
         let camber_ray = station.camber_ray();
-        let to_farthest = farthest_point_direction_distance(line, &camber_ray);
+        let to_farthest = farthest_point_direction_distance(&curve.line, &camber_ray);
         let half_thickness = station.thk * 0.5;
 
         stations.push(station);
@@ -252,7 +247,7 @@ fn extract_half_camber_line(
 
         let advance_by = half_thickness.min(to_farthest);
         let advance_tol = outer_tol * 10.0;
-        if let Some(next_ray) = spanning_ray_advance(line, &camber_ray, advance_by, advance_tol) {
+        if let Some(next_ray) = spanning_ray_advance(curve, &camber_ray, advance_by, advance_tol) {
             ray = next_ray;
             continue;
         } else {
@@ -270,27 +265,54 @@ struct DebugData {
     line: VectorList2f64,
 }
 
-pub fn analyze_airfoil(points: &[Point2<f64>], params: AfParams) {
-    let line = Polyline::from_cleaned_points(points, params.tol);
-    let hull = ConvexPolygon::try_from_points(points).unwrap();
+pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), Box<dyn Error>> {
+    // Create the oriented curve (normals facing outward) and the first spanning ray
+    let (curve, spanning) = create_curve_and_orient(points, params)?;
 
-    let (i0, i1) = farthest_pair_indices(&hull);
-    let rough_chord = Ray::new(hull.points()[i0], hull.points()[i1] - hull.points()[i0]);
+    // Build the unambiguous portions of the airfoil, away from the leading and trailing edges
+    let mut stations = extract_half_camber_line(&curve, &spanning, None);
+    let half = extract_half_camber_line(&curve, &spanning.reversed(), None);
 
-    // Create the initial intersections
-    let mid_ray = Ray::new(rough_chord.point_at(0.5), rough_chord.orthogonal());
-    let spanning = spanning_ray(&line, &mid_ray).expect("Failed on middle ray");
-
-    let mut stations = extract_half_camber_line(&line, &spanning, None);
-    let half = extract_half_camber_line(&line, &spanning.reversed(), None);
     stations.reverse();
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
+
+    // Now deal with the leading and trailing edges
+
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
         stations,
-        line: VectorList2f64::from_points(line.points()),
+        line: VectorList2f64::from_points(curve.line.points()),
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
-    write!(file, "{}", s).unwrap();
+    write!(file, "{}", s)?;
+
+    Ok(())
+}
+
+fn create_curve_and_orient(points: &[Point2<f64>], params: &AfParams) -> Result<(Curve2, SpanningRay), Box<dyn Error>> {
+    let curve = Curve2::from_points(points, params.tol, false)?;
+    let hull = curve.make_hull().expect("Failed to build convex hull");
+
+    let (i0, i1) = farthest_pair_indices(&hull);
+    let rough_chord = Ray::new(hull.points()[i0], hull.points()[i1] - hull.points()[i0]);
+
+    // Create the initial intersection
+    let mid_ray = Ray::new(rough_chord.point_at(0.5), rough_chord.orthogonal());
+
+    let spanning = curve.spanning_ray(&mid_ray).expect("Failed on middle ray");
+    let d = curve.distance_along(&spanning.origin());
+    let n = curve.normal_at(d);
+
+    if n.dot(&spanning.dir()) > 0.0 {
+        Ok((curve.reversed(), spanning))
+    } else {
+        Ok((curve, spanning))
+    }
+}
+
+/// Given a full curve and the last station, portion out the
+fn extract_edge_data(curve: &Curve2, station: &ExtractStation, invert: bool) -> Option<Curve2> {
+
+    todo!()
 }

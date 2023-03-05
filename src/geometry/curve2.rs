@@ -4,12 +4,14 @@ use crate::geometry::aabb2::{PointVisitor, SearchType};
 use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
+use crate::geometry::polyline::{spanning_ray, SpanningRay};
 use ncollide2d::math::Isometry;
-use ncollide2d::na::{Point2, Vector2};
+use ncollide2d::na::Point2;
 use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
-use ncollide2d::shape::Polyline;
+use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::error::Error;
+use itertools::Itertools;
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -22,6 +24,9 @@ pub struct Curve2 {
 }
 
 impl Curve2 {
+    pub fn tol(&self) -> f64 {
+        self.tol
+    }
     pub fn first_n(&self) -> UnitVec2 {
         self.line.edges().first().unwrap().normal.unwrap()
     }
@@ -130,6 +135,13 @@ impl Curve2 {
         self.closest_point_and_edge(query).1
     }
 
+    /// Projects the point onto the curve and returns the distance along the curve that the
+    /// projected point is
+    pub fn distance_along(&self, point: &Point2<f64>) -> f64 {
+        let (index, point) = self.closest_point_and_edge(point);
+        self.lengths[index] + dist(&point, &self.line.points()[index])
+    }
+
     /// Returns a curve portion between the section at length l0 and l1. If the curve is not closed,
     /// the case where l1 < l0 will return None. If the curve is closed, the portion of the curve
     /// which is returned will depend on whether l0 is larger or smaller than l1.
@@ -186,6 +198,10 @@ impl Curve2 {
         }
     }
 
+    pub fn direction_at(&self, l: f64) -> UnitVec2 {
+        dir_from_normal(&self.normal_at(l))
+    }
+
     pub fn point_at_fraction(&self, f: f64) -> Point2<f64> {
         self.point_at(f / self.length())
     }
@@ -230,8 +246,22 @@ impl Curve2 {
         })
     }
 
+    pub fn reversed(&self) -> Self {
+        // TODO: this is ugly
+        let r: Vec<Point2<f64>> = self.line.points().iter().rev().copied().collect_vec();
+        Self::from_points(&r, self.tol, false).expect("Reverse failed but should not have")
+    }
+
     pub fn edge_count(&self) -> usize {
         self.line.edges().len()
+    }
+
+    pub fn make_hull(&self) -> Option<ConvexPolygon<f64>> {
+        ConvexPolygon::try_from_points(&self.line.points())
+    }
+
+    pub fn spanning_ray(&self, test_ray: &Ray<f64>) -> Option<SpanningRay> {
+        spanning_ray(&self.line, test_ray)
     }
 }
 
@@ -239,26 +269,11 @@ fn dir_from_normal(u: &UnitVec2) -> UnitVec2 {
     Isometry::rotation(std::f64::consts::PI * 0.5) * u
 }
 
-// /// Determine the indices which must be visited during the portioning process.
-// fn portioning_indices(count: usize, s: &IndAndFrac, e: &IndAndFrac, closed: bool) -> Vec<usize> {
-//     let mut indices = Vec::new();
-//     let mut working = s.i;
-//     loop {
-//         working += 1;
-//         if working == end + 1 || working == count - 1{
-//             break;
-//         }
-//         indices.push(working);
-//     }
-//
-//     indices
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use ncollide2d::na::Point2;
+    use ncollide2d::na::{Point2, Vector2};
     use test_case::test_case;
 
     fn sample1() -> Vec<(f64, f64)> {
