@@ -255,21 +255,22 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_closest_point_visitor() {
-        let poly = sample_polyline();
-        let p: Point2<f64> = Point2::new(10.0, 0.0);
-        let mut buffer = Vec::new();
-        let mut v = PointVisitor::new(&p, &mut buffer, SearchType::Closest);
-
-        poly.bvt().visit(&mut v);
-
-        for i in buffer.iter() {
-            //
-        }
-
-        assert!(false)
-    }
+    // TODO: Find a way to test this
+    // #[test]
+    // fn test_closest_point_visitor() {
+    //     let poly = sample_polyline();
+    //     let p: Point2<f64> = Point2::new(10.0, 0.0);
+    //     let mut buffer = Vec::new();
+    //     let mut v = PointVisitor::new(&p, &mut buffer, SearchType::Closest);
+    //
+    //     poly.bvt().visit(&mut v);
+    //
+    //     for i in buffer.iter() {
+    //         //
+    //     }
+    //
+    //     assert!(false)
+    // }
 
     fn sample_polyline() -> Polyline<f64> {
         let points: Vec<Point2<f64>> = vec![

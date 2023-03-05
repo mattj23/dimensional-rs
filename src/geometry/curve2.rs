@@ -1,41 +1,49 @@
 use crate::algorithms::preceding_index_search;
 use crate::errors::InvalidGeometry;
-use crate::geometry::distances2::{dist, signed_angle};
-use ncollide2d::math::Isometry;
-use ncollide2d::na::{Point2, Unit, Vector2};
-use ncollide2d::shape::Polyline;
-use std::error::Error;
+use crate::geometry::aabb2::{PointVisitor, SearchType};
+use crate::geometry::common::{IndexAndFraction, sym_unit_vec, UnitVec2};
+use crate::geometry::distances2::dist;
+use crate::geometry::line2::Line2;
+use ncollide2d::na::{Point2, Vector2};
 use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
-use crate::geometry::aabb2::{PointVisitor, SearchType};
-use crate::geometry::line2::Line2;
-
-
-type UnitVec2 = Unit<Vector2<f64>>;
-
-fn sym_unit_vec(a: &UnitVec2, b: &UnitVec2) -> UnitVec2 {
-    let t = signed_angle(a, b) * 0.5;
-    Isometry::rotation(t) * a
-}
+use ncollide2d::shape::Polyline;
+use std::error::Error;
+use ncollide2d::math::Isometry;
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
 /// searches, transformations, resampling, and splitting.
 pub struct Curve2 {
     pub line: Polyline<f64>,
-    normals: Vec<UnitVec2>,
     lengths: Vec<f64>,
     is_closed: bool,
     tol: f64,
 }
 
 impl Curve2 {
-    fn first_n(&self) -> UnitVec2 {
+    pub fn first_n(&self) -> UnitVec2 {
         self.line.edges().first().unwrap().normal.unwrap()
     }
 
-    fn last_n(&self) -> UnitVec2 {
+    pub fn last_n(&self) -> UnitVec2 {
         self.line.edges().last().unwrap().normal.unwrap()
+    }
+
+    pub fn first_v(&self) -> Point2<f64> {
+        self.line.points()[0]
+    }
+
+    pub fn last_v(&self) -> Point2<f64> {
+        *self.line.points().last().unwrap()
+    }
+
+    pub fn first_d(&self) -> UnitVec2 {
+        dir_from_normal(&self.first_n())
+    }
+
+    pub fn last_d(&self) -> UnitVec2 {
+        dir_from_normal(&self.last_n())
     }
 
     fn last_vi(&self) -> usize {
@@ -58,7 +66,7 @@ impl Curve2 {
     /// return (0, 1.0). At l>=1.0, it will return (2, 0.0).  The position of the point at l can
     /// be found by self.line.points[i] * f + self.line.points[i+1] * (1.0 - f), where i is the
     /// index and f is the f64
-    fn at_length(&self, l: f64) -> (usize, f64) {
+    fn at_length(&self, l: f64) -> IndexAndFraction {
         let d = l.clamp(0.0, self.length());
 
         // We know that we have at least two vertices, and that the index that will be returned is
@@ -66,18 +74,21 @@ impl Curve2 {
         let index = preceding_index_search(&self.lengths, l);
 
         if index == self.line.points().len() - 1 {
-            (index - 1, 0.0)
+            IndexAndFraction::new(index - 1, 0.0)
         } else {
             let f = (d - self.lengths[index]) / (self.lengths[index + 1] - self.lengths[index]);
-            (index, 1.0 - f)
+            IndexAndFraction::new(index, 1.0 - f)
         }
     }
 
+    fn point_from_index_fraction(&self, iaf: &IndexAndFraction) -> Point2<f64> {
+        let p = self.line.points()[iaf.i];
+        let v = self.line.points()[iaf.i + 1] - p;
+        p + (1.0 - iaf.f) * v
+    }
+
     pub fn point_at(&self, l: f64) -> Point2<f64> {
-        let (i, f) = self.at_length(l);
-        let p = self.line.points()[i];
-        let v = self.line.points()[i + 1] - p;
-        p + (1.0 - f) * v
+        self.point_from_index_fraction(&self.at_length(l))
     }
 
     fn normal_at_vertex(&self, i: usize) -> UnitVec2 {
@@ -97,7 +108,7 @@ impl Curve2 {
 
     /// Finds the closest point on the curve to the query point, returning the index of the
     /// edge and the location of the found point.
-    fn closest_point_to(&self, query: &Point2<f64>) -> (usize, Point2<f64>) {
+    fn closest_point_and_edge(&self, query: &Point2<f64>) -> (usize, Point2<f64>) {
         let mut collected = Vec::new();
         let mut visitor = PointVisitor::new(query, &mut collected, SearchType::Closest);
         self.line.bvt().visit(&mut visitor);
@@ -123,15 +134,60 @@ impl Curve2 {
         (value.1, value.2)
     }
 
-    pub fn normal_at(&self, l: f64) -> UnitVec2 {
-        let (i, f) = self.at_length(l);
+    pub fn closest_point_to(&self, query: &Point2<f64>) -> Point2<f64> {
+        self.closest_point_and_edge(query).1
+    }
 
-        if f <= self.tol {
-            self.normal_at_vertex(i + 1)
-        } else if (f - 1.0).abs() <= self.tol {
-            self.normal_at_vertex(i)
+    /// Returns a curve portion between the section at length l0 and l1. If the curve is not closed,
+    /// the case where l1 < l0 will return None. If the curve is closed, the portion of the curve
+    /// which is returned will depend on whether l0 is larger or smaller than l1.
+    ///
+    /// The new curve will begin at the point corresponding with l0.
+    pub fn portion_between_lengths(&self, l0: f64, l1: f64) -> Option<Curve2> {
+        // If either the distance between l1 and l0 are less than the curve tolerance or the orders
+        // are inverted when the curve isn't closed, we have a poorly conditioned request and we
+        // can return None
+        if (l1 - l0).abs() < self.tol || (!self.is_closed && l1 < l0) {
+            None
         } else {
-            self.line.edges()[i].normal.unwrap()
+            let start = self.at_length(l0);
+            let end = self.at_length(l1);
+
+            let mut points = vec![self.point_from_index_fraction(&start)];
+            let mut index = start.i + 1;
+            while index != end.i {
+                // Check for the end of the vertices
+                if index >= self.line.points().len() {
+                    if self.is_closed {
+                        index = 0;
+                    } else {
+                        break;
+                    }
+                }
+
+                points.push(self.line.points()[index]);
+                index += 1;
+            }
+
+            points.push(self.point_from_index_fraction(&end));
+
+            if let Ok(c) = Curve2::from_points(&points, self.tol,false) {
+                Some(c)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn normal_at(&self, l: f64) -> UnitVec2 {
+        let r = self.at_length(l);
+
+        if r.f <= self.tol {
+            self.normal_at_vertex(r.i + 1)
+        } else if (r.f - 1.0).abs() <= self.tol {
+            self.normal_at_vertex(r.i)
+        } else {
+            self.line.edges()[r.i].normal.unwrap()
         }
     }
 
@@ -165,9 +221,6 @@ impl Curve2 {
         // there is vertices, and each edge i will join vertex i with vertex i+1
         let line = Polyline::new(pts, None);
 
-        // Compute the normals
-        let normals: Vec<UnitVec2> = line.edges().iter().map(|e| e.normal.unwrap()).collect();
-
         let mut lengths: Vec<f64> = vec![0.0];
         for e in line.edges().iter() {
             let d = dist(&line.points()[e.indices[0]], &line.points()[e.indices[1]]);
@@ -176,7 +229,6 @@ impl Curve2 {
 
         Ok(Curve2 {
             line,
-            normals,
             lengths,
             is_closed,
             tol,
@@ -186,6 +238,25 @@ impl Curve2 {
     pub fn edge_count(&self) -> usize {
         self.line.edges().len()
     }
+}
+
+fn dir_from_normal(u: &UnitVec2) -> UnitVec2 {
+    Isometry::rotation(std::f64::consts::PI * 0.5) * u
+}
+
+/// Determine the indices which must be visited during the portioning process.
+fn portioning_indices(count: usize, start: usize, end: usize, closed: bool) -> Vec<usize> {
+    let mut indices = Vec::new();
+    let mut working = start;
+    loop {
+        working += 1;
+        if working == end + 1 || working == count - 1{
+            break;
+        }
+        indices.push(working);
+    }
+
+    indices
 }
 
 #[cfg(test)]
@@ -212,7 +283,7 @@ mod tests {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
-        let p = curve.closest_point_to(&Point2::new(2.0, 0.0));
+        let p = curve.closest_point_and_edge(&Point2::new(2.0, 0.0));
         assert!(p.0 == 0 || p.0 == 1);
         assert_relative_eq!(1.0, p.1.x, epsilon = 1e-8);
         assert_relative_eq!(0.0, p.1.y, epsilon = 1e-8);
@@ -255,9 +326,9 @@ mod tests {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
 
-        let (i, f) = curve.at_length(l);
-        assert_eq!(ei, i);
-        assert_relative_eq!(ef, f, epsilon = 1e-8);
+        let r = curve.at_length(l);
+        assert_eq!(ei, r.i);
+        assert_relative_eq!(ef, r.f, epsilon = 1e-8);
     }
 
     #[test_case(0.5, (0.5, 0.0))]
@@ -309,5 +380,45 @@ mod tests {
 
         assert_relative_eq!(e.x, n.x, epsilon = 1e-8);
         assert_relative_eq!(e.y, n.y, epsilon = 1e-8);
+    }
+
+    #[test]
+    fn test_portioning_indices() {
+        // [0] -> [1] -> [2] -> [3] OPEN
+        //    |  |
+        assert_eq!(Vec::<usize>::new(), portioning_indices(4, 0, 0, false));
+
+        // [0] -> [1] -> [2] -> [3] OPEN
+        //     |       |
+        assert_eq!(vec![1], portioning_indices(4, 0, 1, false));
+
+        // [0] -> [1] -> [2] -> [3] OPEN
+        //     |             |
+        assert_eq!(vec![1, 2], portioning_indices(4, 0, 2, false));
+
+        // [0] -> [1] -> [2] -> [3] OPEN
+        //     |                  |
+        assert_eq!(vec![1, 2], portioning_indices(4, 0, 3, false));
+    }
+
+    fn check_portion_open(c: &Curve2, l: (f64, f64), e0: (f64, f64), e1: (f64, f64)) {
+        let result = c.portion_between_lengths(l.0, l.1).unwrap();
+        assert_relative_eq!(e0.0, result.first_v().x, epsilon=result.tol);
+        assert_relative_eq!(e0.1, result.first_v().y, epsilon=result.tol);
+        assert_relative_eq!(e1.0, result.last_v().x, epsilon=result.tol);
+        assert_relative_eq!(e1.1, result.last_v().y, epsilon=result.tol);
+        assert_relative_eq!((l.1 - l.0).abs(), result.length(), epsilon = result.tol);
+    }
+
+    #[test]
+    fn test_portion_open() {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, false).unwrap();
+
+        check_portion_open(&curve, (0.0, 2.5), (0.0, 0.0), (0.5, 1.0));
+
+        // Same segment
+        // check_portion_open(&curve, (0.1, 0.2), (0.1, 0.0), (0.2, 0.0));
+
     }
 }
