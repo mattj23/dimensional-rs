@@ -1,7 +1,7 @@
 use crate::algorithms::preceding_index_search;
 use crate::errors::InvalidGeometry;
 use crate::geometry::aabb2::{PointVisitor, SearchType};
-use crate::geometry::common::{IndexAndFraction, sym_unit_vec, UnitVec2};
+use crate::geometry::common::{IndAndFrac, sym_unit_vec, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
 use ncollide2d::na::{Point2, Vector2};
@@ -58,15 +58,7 @@ impl Curve2 {
         *self.lengths.last().unwrap_or(&0.0)
     }
 
-    /// Finds the preceding index of the vertex at the given length along the curve, and returns
-    /// an f64 which represents the weighting of the preceding point needed to reconstruct the
-    /// properties of the point at the specified length.
-    ///
-    /// For example, imagine a curve of length 1 which has 3 vertices. At l<=0.0, the function will
-    /// return (0, 1.0). At l>=1.0, it will return (2, 0.0).  The position of the point at l can
-    /// be found by self.line.points[i] * f + self.line.points[i+1] * (1.0 - f), where i is the
-    /// index and f is the f64
-    fn at_length(&self, l: f64) -> IndexAndFraction {
+    fn at_length(&self, l: f64) -> IndAndFrac {
         let d = l.clamp(0.0, self.length());
 
         // We know that we have at least two vertices, and that the index that will be returned is
@@ -74,17 +66,17 @@ impl Curve2 {
         let index = preceding_index_search(&self.lengths, l);
 
         if index == self.line.points().len() - 1 {
-            IndexAndFraction::new(index - 1, 0.0)
+            IndAndFrac::one(index - 1)
         } else {
             let f = (d - self.lengths[index]) / (self.lengths[index + 1] - self.lengths[index]);
-            IndexAndFraction::new(index, 1.0 - f)
+            IndAndFrac::new(index, f)
         }
     }
 
-    fn point_from_index_fraction(&self, iaf: &IndexAndFraction) -> Point2<f64> {
+    fn point_from_index_fraction(&self, iaf: &IndAndFrac) -> Point2<f64> {
         let p = self.line.points()[iaf.i];
         let v = self.line.points()[iaf.i + 1] - p;
-        p + (1.0 - iaf.f) * v
+        p + iaf.f * v
     }
 
     pub fn point_at(&self, l: f64) -> Point2<f64> {
@@ -147,26 +139,46 @@ impl Curve2 {
         // If either the distance between l1 and l0 are less than the curve tolerance or the orders
         // are inverted when the curve isn't closed, we have a poorly conditioned request and we
         // can return None
-        if (l1 - l0).abs() < self.tol || (!self.is_closed && l1 < l0) {
+
+        let start = self.at_length(l0);
+        let end = self.at_length(l1);
+
+        if (l1 - l0).abs() < self.tol || (!self.is_closed && end < start) {
             None
         } else {
-            let start = self.at_length(l0);
-            let end = self.at_length(l1);
+            // Unique ending cases:
+            // (0) |->| (1)      (2)      (3)     OPEN/CLOSED
+            // (0)->||->(1)  ->  (2)  ->  (3) ->  CLOSED
+            // (0)  ->  (1)->||->(2)  ->  (3) ->  CLOSED
+            // (0)  ->  (1)  ->  (2)->||->(3) ->  CLOSED
+
+            // (0) |->  (1)  ->| (2)      (3)     OPEN/CLOSED
+            // (0) |->  (1)  ->  (2)  ->| (3)     OPEN/CLOSED
+            // (0) |->  (1)  ->  (2)  ->  (3) ->| INVALID
+            // (0) |->  (1)  ->  (2)  ->  (3) ->| CLOSED
+            // (0)  ->| (1) |->  (2)  ->  (3) ->  CLOSED
+            // (0)  ->  (1)->||->(2)  ->  (3) ->  CLOSED
 
             let mut points = vec![self.point_from_index_fraction(&start)];
-            let mut index = start.i + 1;
-            while index != end.i {
-                // Check for the end of the vertices
-                if index >= self.line.points().len() {
+            let mut working = start;
+            loop {
+                working = working.next_zero();
+
+                // Terminal condition
+                if working.i == end.i && working < end {
+                    points.push(self.line.points()[working.i]);
+                    break;
+                }
+
+                if working.i >= self.last_vi() {
                     if self.is_closed {
-                        index = 0;
+                        working = IndAndFrac::zero(0);
                     } else {
                         break;
                     }
                 }
 
-                points.push(self.line.points()[index]);
-                index += 1;
+                points.push(self.line.points()[working.i]);
             }
 
             points.push(self.point_from_index_fraction(&end));
@@ -183,9 +195,9 @@ impl Curve2 {
         let r = self.at_length(l);
 
         if r.f <= self.tol {
-            self.normal_at_vertex(r.i + 1)
-        } else if (r.f - 1.0).abs() <= self.tol {
             self.normal_at_vertex(r.i)
+        } else if (r.f - 1.0).abs() <= self.tol {
+            self.normal_at_vertex(r.i + 1)
         } else {
             self.line.edges()[r.i].normal.unwrap()
         }
@@ -244,20 +256,20 @@ fn dir_from_normal(u: &UnitVec2) -> UnitVec2 {
     Isometry::rotation(std::f64::consts::PI * 0.5) * u
 }
 
-/// Determine the indices which must be visited during the portioning process.
-fn portioning_indices(count: usize, start: usize, end: usize, closed: bool) -> Vec<usize> {
-    let mut indices = Vec::new();
-    let mut working = start;
-    loop {
-        working += 1;
-        if working == end + 1 || working == count - 1{
-            break;
-        }
-        indices.push(working);
-    }
-
-    indices
-}
+// /// Determine the indices which must be visited during the portioning process.
+// fn portioning_indices(count: usize, s: &IndAndFrac, e: &IndAndFrac, closed: bool) -> Vec<usize> {
+//     let mut indices = Vec::new();
+//     let mut working = s.i;
+//     loop {
+//         working += 1;
+//         if working == end + 1 || working == count - 1{
+//             break;
+//         }
+//         indices.push(working);
+//     }
+//
+//     indices
+// }
 
 #[cfg(test)]
 mod tests {
@@ -317,11 +329,11 @@ mod tests {
     }
 
     #[test_case(0.5, 0, 0.5)]
-    #[test_case(-0.5, 0, 1.0)]
-    #[test_case(0.0, 0, 1.0)]
-    #[test_case(5.0, 3, 0.0)]
-    #[test_case(2.0, 2, 1.0)]
-    #[test_case(2.25, 2, 0.75)]
+    #[test_case(-0.5, 0, 0.0)]
+    #[test_case(0.0, 0, 0.0)]
+    #[test_case(5.0, 3, 1.0)]
+    #[test_case(2.0, 2, 0.0)]
+    #[test_case(2.25, 2, 0.25)]
     fn test_lengths(l: f64, ei: usize, ef: f64) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, true).unwrap();
@@ -382,23 +394,49 @@ mod tests {
         assert_relative_eq!(e.y, n.y, epsilon = 1e-8);
     }
 
-    #[test]
-    fn test_portioning_indices() {
-        // [0] -> [1] -> [2] -> [3] OPEN
-        //    |  |
-        assert_eq!(Vec::<usize>::new(), portioning_indices(4, 0, 0, false));
+    fn has_vertex(v: &Point2<f64>, c: &[Point2<f64>]) -> bool {
+        for t in c.iter() {
+            if dist(t, v) < 1e-6 {
+                return true;
+            }
+        }
+        false
+    }
 
-        // [0] -> [1] -> [2] -> [3] OPEN
-        //     |       |
-        assert_eq!(vec![1], portioning_indices(4, 0, 1, false));
+    // (0) |->| (1)      (2)      (3)     OPEN/CLOSED
+    // (0)      (1) |->| (2)      (3)     OPEN/CLOSED
 
-        // [0] -> [1] -> [2] -> [3] OPEN
-        //     |             |
-        assert_eq!(vec![1, 2], portioning_indices(4, 0, 2, false));
+    #[test_case((0.1, 1.2), false, vec![1])]            // (0) |->  (1)  ->| (2)      (3)      O/C
+    #[test_case((0.1, 2.2), false, vec![1, 2])]         // (0) |->  (1)  ->  (2)  ->| (3)      O/C
+    #[test_case((1.7, 1.2), true, vec![2, 3, 0, 1])]    // (0)  ->  (1)->||->(2)  ->  (3)      C
+    #[test_case((2.7, 2.2), true, vec![3, 0, 1, 2])]    // (0)  ->  (1)  ->  (2)->||->(3) ->   C
+    #[test_case((3.7, 3.2), true, vec![0, 1, 2, 3])]    // (0)  ->  (1)  ->  (2)  ->  (3)->||->C
+    #[test_case((1.2, 0.7), true, vec![2, 3, 0])]       // (0)  ->| (1) |->  (2)  ->  (3) ->   C
+    // #[test_case((3.2, 0.7), true, vec![1, 2, 3, 0])]    // (0) |->  (1)  ->  (2)  ->  (3) ->|  C
+    // #[test_case((0.1, 0.2), false, Vec::<usize>::new())]// (0) |->| (1)      (2)      (3)     O/C
+    // (0)      (1) |->| (2)      (3)     OPEN/CLOSED
+    fn test_portioning(l: (f64, f64), c: bool, i: Vec<usize>) {
+        let points = sample_points(&sample1());
+        let curve = Curve2::from_points(&points, 1e-6, c).unwrap();
+        let p0 = curve.point_at(l.0);
+        let p1 = curve.point_at(l.1);
+        let result = curve.portion_between_lengths(l.0, l.1).unwrap();
 
-        // [0] -> [1] -> [2] -> [3] OPEN
-        //     |                  |
-        assert_eq!(vec![1, 2], portioning_indices(4, 0, 3, false));
+        let e_l = if l.1 > l.0 {
+            l.1 - l.0
+        } else {
+            curve.length() - (l.0 - l.1)
+        };
+
+        assert_relative_eq!(e_l, result.length(), epsilon = result.tol);
+        assert_relative_eq!(p0.x, result.first_v().x, epsilon=result.tol);
+        assert_relative_eq!(p0.y, result.first_v().y, epsilon=result.tol);
+        assert_relative_eq!(p1.x, result.last_v().x, epsilon=result.tol);
+        assert_relative_eq!(p1.y, result.last_v().y, epsilon=result.tol);
+
+        for index in i {
+            assert!(has_vertex(&points[index], result.line.points()));
+        }
     }
 
     fn check_portion_open(c: &Curve2, l: (f64, f64), e0: (f64, f64), e1: (f64, f64)) {
