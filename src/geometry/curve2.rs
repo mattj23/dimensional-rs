@@ -142,45 +142,29 @@ impl Curve2 {
 
         let start = self.at_length(l0);
         let end = self.at_length(l1);
+        let mut wrap = end < start;
 
-        if (l1 - l0).abs() < self.tol || (!self.is_closed && end < start) {
+        if (l1 - l0).abs() < self.tol || (!self.is_closed && wrap) {
             None
         } else {
-            // Unique ending cases:
-            // (0) |->| (1)      (2)      (3)     OPEN/CLOSED
-            // (0)->||->(1)  ->  (2)  ->  (3) ->  CLOSED
-            // (0)  ->  (1)->||->(2)  ->  (3) ->  CLOSED
-            // (0)  ->  (1)  ->  (2)->||->(3) ->  CLOSED
-
-            // (0) |->  (1)  ->| (2)      (3)     OPEN/CLOSED
-            // (0) |->  (1)  ->  (2)  ->| (3)     OPEN/CLOSED
-            // (0) |->  (1)  ->  (2)  ->  (3) ->| INVALID
-            // (0) |->  (1)  ->  (2)  ->  (3) ->| CLOSED
-            // (0)  ->| (1) |->  (2)  ->  (3) ->  CLOSED
-            // (0)  ->  (1)->||->(2)  ->  (3) ->  CLOSED
-
-            let mut points = vec![self.point_from_index_fraction(&start)];
+            let mut points = Vec::new();
             let mut working = start;
+
             loop {
+                points.push(self.point_from_index_fraction(&working));
                 working = working.next_zero();
 
                 // Terminal condition
-                if working.i == end.i && working < end {
-                    points.push(self.line.points()[working.i]);
+                if working >= end && !wrap {
                     break;
                 }
 
-                if working.i >= self.last_vi() {
-                    if self.is_closed {
-                        working = IndAndFrac::zero(0);
-                    } else {
-                        break;
-                    }
+                if working.i >= self.last_vi() && wrap {
+                    working = IndAndFrac::zero(0);
+                    wrap = false;
                 }
 
-                points.push(self.line.points()[working.i]);
             }
-
             points.push(self.point_from_index_fraction(&end));
 
             if let Ok(c) = Curve2::from_points(&points, self.tol,false) {
@@ -403,18 +387,20 @@ mod tests {
         false
     }
 
-    // (0) |->| (1)      (2)      (3)     OPEN/CLOSED
-    // (0)      (1) |->| (2)      (3)     OPEN/CLOSED
-
     #[test_case((0.1, 1.2), false, vec![1])]            // (0) |->  (1)  ->| (2)      (3)      O/C
     #[test_case((0.1, 2.2), false, vec![1, 2])]         // (0) |->  (1)  ->  (2)  ->| (3)      O/C
+    #[test_case((0.7, 0.2), true, vec![1, 2, 3, 0])]    // (0)->||->(1)  ->  (2)  ->  (3)      C
     #[test_case((1.7, 1.2), true, vec![2, 3, 0, 1])]    // (0)  ->  (1)->||->(2)  ->  (3)      C
     #[test_case((2.7, 2.2), true, vec![3, 0, 1, 2])]    // (0)  ->  (1)  ->  (2)->||->(3) ->   C
     #[test_case((3.7, 3.2), true, vec![0, 1, 2, 3])]    // (0)  ->  (1)  ->  (2)  ->  (3)->||->C
     #[test_case((1.2, 0.7), true, vec![2, 3, 0])]       // (0)  ->| (1) |->  (2)  ->  (3) ->   C
-    // #[test_case((3.2, 0.7), true, vec![1, 2, 3, 0])]    // (0) |->  (1)  ->  (2)  ->  (3) ->|  C
-    // #[test_case((0.1, 0.2), false, Vec::<usize>::new())]// (0) |->| (1)      (2)      (3)     O/C
-    // (0)      (1) |->| (2)      (3)     OPEN/CLOSED
+    #[test_case((3.2, 0.7), true, vec![0])]             // (0)  ->| (1)      (2)      (3) ->|  C
+    #[test_case((0.2, 3.7), true, vec![1, 2, 3])]       // (0) |->  (1)  ->  (2)  ->  (3) ->|  C
+    #[test_case((0.1, 0.2), false, Vec::<usize>::new())]// (0) |->| (1)      (2)      (3)     O/C
+    #[test_case((0.1, 0.2), true, Vec::<usize>::new())] // (0) |->| (1)      (2)      (3)     O/C
+    #[test_case((1.1, 1.8), false, Vec::<usize>::new())]// (0)      (1) |->| (2)      (3)     O/C
+    #[test_case((1.1, 1.8), true, Vec::<usize>::new())] // (0)      (1) |->| (2)      (3)     O/C
+    #[test_case((3.1, 3.8), true, Vec::<usize>::new())] // (0)      (1)      (2)      (3)|->| C
     fn test_portioning(l: (f64, f64), c: bool, i: Vec<usize>) {
         let points = sample_points(&sample1());
         let curve = Curve2::from_points(&points, 1e-6, c).unwrap();
