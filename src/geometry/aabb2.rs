@@ -1,8 +1,9 @@
 use crate::geometry::distances2::dist;
 use ncollide2d::bounding_volume::AABB;
 use ncollide2d::na::{Point2, RealField};
-use ncollide2d::partitioning::{VisitStatus, Visitor};
+use ncollide2d::partitioning::{VisitStatus, Visitor, BVH, BVT};
 use ncollide2d::query::Ray;
+use crate::geometry::partitioning::{PointVisitor, SearchType};
 
 pub fn aabb_closest_point<N: RealField + Copy>(b: &AABB<N>, p: &Point2<N>) -> Point2<N> {
     Point2::new(p.x.clamp(b.mins.x, b.maxs.x), p.y.clamp(b.mins.y, b.maxs.x))
@@ -114,35 +115,6 @@ impl<N: RealField + Copy, T: Clone> DistanceSearch<N, T> {
     }
 }
 
-#[derive(Debug)]
-pub enum SearchType {
-    Closest,
-    Farthest,
-}
-
-pub struct PointVisitor<'a, N: 'a + RealField + Copy, T: 'a + Clone> {
-    pub point: &'a Point2<N>,
-    pub collector: &'a mut Vec<DistanceSearch<N, T>>,
-    min_farthest: N,
-    max_closest: N,
-    pub search_type: SearchType,
-}
-
-impl<'a, N: RealField + Copy, T: 'a + Clone> PointVisitor<'a, N, T> {
-    pub fn new(
-        point: &'a Point2<N>,
-        buffer: &'a mut Vec<DistanceSearch<N, T>>,
-        search_type: SearchType,
-    ) -> PointVisitor<'a, N, T> {
-        PointVisitor {
-            point,
-            collector: buffer,
-            min_farthest: N::max_value().unwrap(),
-            max_closest: N::min_value().unwrap(),
-            search_type,
-        }
-    }
-}
 
 impl<'a, N, T> Visitor<T, AABB<N>> for PointVisitor<'a, N, T>
 where

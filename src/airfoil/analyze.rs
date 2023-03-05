@@ -303,20 +303,8 @@ fn extract_edge_data(curve: &Curve2, station: &ExtractStation, invert: bool) -> 
         station.camber_ray().dir.normalize()
     };
 
-    println!("{}", points_to_string(curve.line.points()));
-
     let l0 = curve.distance_along(&station.lower);
     let l1 = curve.distance_along(&station.upper);
-
-    let t0 = curve.point_at(l0);
-    println!("l0: {}", l0);
-    println!("Lower:  {}, {}", station.lower.x, station.lower.y);
-    println!("Tested: {}, {}", t0.x, t0.y);
-
-    let t1 = curve.point_at(l1);
-    println!("l1: {}", l1);
-    println!("Upper:  {}, {}", station.upper.x, station.upper.y);
-    println!("Tested: {}, {}", t1.x, t1.y);
 
     // If the direction of the curve at l0 is in the same direction as the edge direction, we do
     // not need to swap the lengths while extracting the curve portion

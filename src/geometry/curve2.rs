@@ -1,6 +1,5 @@
 use crate::algorithms::preceding_index_search;
 use crate::errors::InvalidGeometry;
-use crate::geometry::aabb2::{PointVisitor, SearchType};
 use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
@@ -8,10 +7,10 @@ use crate::geometry::polyline::{spanning_ray, SpanningRay};
 use itertools::Itertools;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
-use ncollide2d::partitioning::BVH;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::error::Error;
+use crate::geometry::partitioning::{BreadthFirst, PointVisitor, SearchType};
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -108,7 +107,7 @@ impl Curve2 {
     fn closest_point_and_edge(&self, query: &Point2<f64>) -> (usize, Point2<f64>) {
         let mut collected = Vec::new();
         let mut visitor = PointVisitor::new(query, &mut collected, SearchType::Closest);
-        self.line.bvt().visit(&mut visitor);
+        self.line.bvt().bf_visit(&mut visitor);
 
         let mut result: Option<(f64, usize, Point2<f64>)> = None;
         for t in collected.iter() {
@@ -462,6 +461,18 @@ mod tests {
     }
 
     #[test]
+    fn test_closest_point_search() {
+        let points = points_from_str(include_str!("test_data/naca.txt"));
+        let curve = Curve2::from_points(&points, 1e-4, false).unwrap();
+        let query = Point2::new(-0.020415658216408356, 0.05938468508636321);
+
+        let (edge, p) = curve.closest_point_and_edge(&query);
+        assert_eq!(edge, 380);
+        assert_relative_eq!(query.x, p.x, epsilon = 2e-6);
+        assert_relative_eq!(query.y, p.y, epsilon = 2e-6);
+    }
+
+    #[test]
     fn test_naca_issue() {
         // l0: 0.061968421528170135
         // Lower:  0.06208009487909469, 0.0031649020793192567
@@ -473,13 +484,13 @@ mod tests {
         let points = points_from_str(include_str!("test_data/naca.txt"));
         let curve = Curve2::from_points(&points, 1e-4, false).unwrap();
 
-        let lower = Point2::new(0.06208009487909469, 0.0031649020793192567);
-        // let upper = Point2::new( -0.020415658216408356, 0.05938468508636321);
+        // let lower = Point2::new(0.06208009487909469, 0.0031649020793192567);
+        let upper = Point2::new( -0.020415658216408356, 0.05938468508636321);
 
-        let l = curve.distance_along(&lower);
+        let l = curve.distance_along(&upper);
         let p = curve.point_at(l);
 
-        assert_relative_eq!(lower.x, p.x, epsilon = 2e-4);
-        assert_relative_eq!(lower.y, p.y, epsilon = 2e-4);
+        assert_relative_eq!(upper.x, p.x, epsilon = 2e-4);
+        assert_relative_eq!(upper.y, p.y, epsilon = 2e-4);
     }
 }
