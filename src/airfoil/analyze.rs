@@ -283,18 +283,15 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
     // Now deal with the leading and trailing edges
-    // let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
-    // let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
+    let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
+    let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
         stations,
         line: VectorList2f64::from_points(curve.line.points()),
-        end0: VectorList2f64::from_points(&Vec::new()),
-        end1: VectorList2f64::from_points(&Vec::new()),
-
-        // end0: VectorList2f64::from_points(end0.line.points()),
-        // end1: VectorList2f64::from_points(end1.line.points()),
+        end0: VectorList2f64::from_points(end0.line.points()),
+        end1: VectorList2f64::from_points(end1.line.points()),
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s)?;
