@@ -33,6 +33,10 @@ pub struct SpanningRay {
 }
 
 impl SpanningRay {
+    pub fn ray(&self) -> Ray<f64> {
+        self.ray
+    }
+
     pub fn new(p0: Point2<f64>, p1: Point2<f64>) -> SpanningRay {
         SpanningRay {
             ray: Ray::new(p0, p1 - p0),

@@ -1,6 +1,6 @@
 use crate::geometry::curve2::Curve2;
 use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
-use crate::geometry::line2::Line2;
+use crate::geometry::line2::{intersect_rays, Line2};
 use crate::geometry::polyline::{farthest_point_direction_distance, SpanningRay};
 use crate::geometry::shapes2::Circle2;
 use crate::serialize::{Point2f64, points_to_string, VectorList2f64};
@@ -23,7 +23,7 @@ pub struct AfParams {
 
 impl Default for AfParams {
     fn default() -> Self {
-        AfParams::new(1e-4, EdgeDetect::Auto, EdgeDetect::Auto)
+        AfParams::new(1e-3, EdgeDetect::Auto, EdgeDetect::Auto)
     }
 }
 
@@ -221,13 +221,14 @@ fn extract_half_camber_line(
     let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-1;
 
-    let mut stations = Vec::new();
+    let mut stations: Vec<ExtractStation> = Vec::new();
     let mut ray = starting_ray.clone();
 
     loop {
         let station = extract_station(curve, &ray, Some(inner_tol));
 
         if let Some(last_station) = stations.last() {
+            let d = station.cp() - last_station.cp();
             let mut refined = refine_between(curve, last_station, &station, outer_tol, inner_tol);
             stations.append(&mut refined);
         }
@@ -245,7 +246,10 @@ fn extract_half_camber_line(
             break;
         }
 
-        let advance_by = half_thickness.min(to_farthest);
+        let (sr_dist, _) = intersect_rays(&camber_ray, &ray.ray())
+            .expect("Failed measuring distance from camber ray to spanning ray");
+
+        let advance_by = half_thickness.min(to_farthest) + sr_dist;
         let advance_tol = outer_tol * 10.0;
         if let Some(next_ray) = spanning_ray_advance(curve, &camber_ray, advance_by, advance_tol) {
             ray = next_ray;
@@ -279,15 +283,18 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
     // Now deal with the leading and trailing edges
-    let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
-    let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
+    // let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
+    // let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
         stations,
         line: VectorList2f64::from_points(curve.line.points()),
-        end0: VectorList2f64::from_points(end0.line.points()),
-        end1: VectorList2f64::from_points(end1.line.points()),
+        end0: VectorList2f64::from_points(&Vec::new()),
+        end1: VectorList2f64::from_points(&Vec::new()),
+
+        // end0: VectorList2f64::from_points(end0.line.points()),
+        // end1: VectorList2f64::from_points(end1.line.points()),
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s)?;

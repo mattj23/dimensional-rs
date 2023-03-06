@@ -77,8 +77,9 @@ pub fn points_from_str(s: &str) -> Vec<Point2<f64>> {
         for pair in token.split(",").take(2).enumerate() {
             pieces[pair.0] = pair
                 .1
+                .trim()
                 .parse()
-                .expect("Couldn't parse a floating point value");
+                .unwrap_or_else(|_| panic!("Couldn't parse a floating point value: '{}'", pair.1));
         }
         raw.push(Point2::new(pieces[0], pieces[1]));
     }
