@@ -4,6 +4,7 @@ pub mod analyze;
 mod common;
 pub mod generate;
 
+use crate::geometry::curve2::Curve2;
 pub use analyze::analyze_airfoil;
 pub use common::{AfParams, EdgeDetect};
 

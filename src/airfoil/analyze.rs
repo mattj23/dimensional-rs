@@ -5,16 +5,20 @@ use crate::geometry::polyline::SpanningRay;
 use crate::geometry::shapes2::Circle2;
 use crate::serialize::VectorList2f64;
 use ncollide2d::math::Isometry;
-use ncollide2d::na::{Point2, Vector2};
+use ncollide2d::na::{Point2, RealField, Vector2};
 use ncollide2d::query::{PointQuery, Ray};
 
 use super::common::{AfParams, EdgeDetect, InscribedCircle};
+use crate::airfoil::common::LeadingOrientation;
 use crate::errors::InvalidGeometry;
 use serde::Serialize;
 use serde_json;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
+use std::os::linux::raw::stat;
+
+type Stations = Vec<InscribedCircle>;
 
 struct MeanSearchState {
     fraction: f64,
@@ -172,7 +176,7 @@ fn extract_half_camber_line(
     curve: &Curve2,
     starting_ray: &SpanningRay,
     tol: Option<f64>,
-) -> Vec<InscribedCircle> {
+) -> Stations {
     let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-2;
 
@@ -205,7 +209,7 @@ fn extract_half_camber_line(
 
 #[derive(Serialize)]
 struct DebugData {
-    stations: Vec<InscribedCircle>,
+    stations: Stations,
     line: VectorList2f64,
     // end0: VectorList2f64,
     // end1: VectorList2f64,
@@ -216,6 +220,7 @@ struct DebugData {
 }
 
 fn reverse_stations(stations: &mut [InscribedCircle]) {
+    stations.reverse();
     stations.iter_mut().for_each(|i| i.reverse_in_place());
 }
 
@@ -225,15 +230,22 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
 
     // Build the unambiguous portions of the airfoil, away from the leading and trailing edges
     let mut stations = extract_half_camber_line(&curve, &spanning, Some(params.tol));
-    let half = extract_half_camber_line(&curve, &spanning.reversed(), Some(params.tol));
-    stations.reverse();
-    stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
+    let mut half = extract_half_camber_line(&curve, &spanning.reversed(), Some(params.tol));
+
+    reverse_stations(&mut stations);
+    stations.append(&mut half);
 
     if stations.is_empty() {
         return Err(InvalidGeometry::GeometricOpFailed.into());
     }
 
     // Attempt to detect the orientation of the leading edge
+    if !match params.le_orientation {
+        LeadingOrientation::TmaxForward => le_is_oriented_by_tmax(&curve, &stations),
+        LeadingOrientation::Direction(dir) => le_is_oriented_by_direction(&dir, &stations),
+    } {
+        reverse_stations(&mut stations);
+    }
 
     // Now deal with the leading and trailing edges
     if let Some(end0) = extract_edge_data(&curve, stations.first().unwrap(), false) {
@@ -255,12 +267,39 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
     Ok(())
 }
 
-fn le_is_oriented_by_tmax(curve: &Curve2) -> bool {
-    todo!()
+fn le_is_oriented_by_tmax(curve: &Curve2, stations: &Stations) -> bool {
+    let r0_ = stations.first().unwrap().camber_ray();
+    let r0 = Ray::new(r0_.origin, -r0_.dir);
+    let r1 = stations.last().unwrap().camber_ray();
+
+    let p0 = curve.max_point_in_ray_direction(&r0).unwrap();
+    let p1 = curve.max_point_in_ray_direction(&r1).unwrap();
+
+    let mut points = vec![p0];
+    points.append(&mut stations.iter().map(|s| s.circle.center).collect());
+    points.push(p1);
+
+    let mcl = Curve2::from_points(&points, curve.tol(), false).expect("Failed to create mcl");
+
+    let mut radii = vec![0.0];
+    radii.append(&mut stations.iter().map(|s| s.radius()).collect());
+    radii.push(0.0);
+
+    let mut t_max = f64::min_value().unwrap();
+    let mut len = 0.0;
+    for i in 0..radii.len() {
+        if radii[i] > t_max {
+            t_max = radii[i];
+            len = mcl.lengths()[i];
+        }
+    }
+
+    len / mcl.length() < 0.5
 }
 
-fn le_is_oriented_by_direction(curve: &Curve2, dir: &Vector2<f64>) -> bool {
-    todo!()
+fn le_is_oriented_by_direction(dir: &Vector2<f64>, stations: &Stations) -> bool {
+    let v = stations.last().unwrap().center() - stations.first().unwrap().center();
+    dir.dot(&v) > 0.0
 }
 
 /// Given a full curve and the last station, portion out the

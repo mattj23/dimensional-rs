@@ -23,6 +23,10 @@ pub struct Curve2 {
 }
 
 impl Curve2 {
+    pub fn lengths(&self) -> &Vec<f64> {
+        &self.lengths
+    }
+
     pub fn tol(&self) -> f64 {
         self.tol
     }

@@ -19,7 +19,12 @@ pub enum EdgeDetect {
 /// This enum specifies the method for trying to detect the orientation of the leading edge on the
 /// airfoil.
 pub enum LeadingOrientation {
+    /// This method is based on the principle that for most subsonic airfoils the point of max
+    /// thickness is closer to the leading edge than to the trailing edge along the camber line
     TmaxForward,
+
+    /// This method takes a direction vector and orients the leading edge such that the vector from
+    /// the back to the front of the camber line has a positive dot product with that vector.
     Direction(Vector2<f64>),
 }
 
