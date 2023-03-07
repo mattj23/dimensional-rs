@@ -3,6 +3,7 @@ use crate::errors::InvalidGeometry;
 use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
+use crate::geometry::partitioning::{BreadthFirst, PointVisitor, SearchType};
 use crate::geometry::polyline::{max_intersection, spanning_ray, SpanningRay};
 use itertools::Itertools;
 use ncollide2d::math::Isometry;
@@ -10,7 +11,6 @@ use ncollide2d::na::Point2;
 use ncollide2d::query::Ray;
 use ncollide2d::shape::{ConvexPolygon, Polyline};
 use std::error::Error;
-use crate::geometry::partitioning::{BreadthFirst, PointVisitor, SearchType};
 
 /// A Curve2 is a 2 dimensional polygonal chain in which its points are connected. It optionally
 /// may include normals. This struct and its methods allow for convenient handling of distance
@@ -265,11 +265,7 @@ impl Curve2 {
     }
 
     pub fn max_ray_intersection(&self, ray: &Ray<f64>) -> Option<Point2<f64>> {
-        if let Some(t) = max_intersection(&self.line, ray) {
-            Some(ray.point_at(t))
-        } else {
-            None
-        }
+        max_intersection(&self.line, ray).map(|t| ray.point_at(t))
     }
 
     pub fn max_point_in_ray_direction(&self, ray: &Ray<f64>) -> Option<Point2<f64>> {
@@ -292,12 +288,12 @@ fn dir_from_normal(u: &UnitVec2) -> UnitVec2 {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::c_float;
     use super::*;
+    use crate::serialize::points_from_str;
     use approx::assert_relative_eq;
     use ncollide2d::na::{Point2, Vector2};
+    use std::ffi::c_float;
     use test_case::test_case;
-    use crate::serialize::points_from_str;
 
     fn sample1() -> Vec<(f64, f64)> {
         vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
@@ -506,7 +502,7 @@ mod tests {
         let curve = Curve2::from_points(&points, 1e-4, false).unwrap();
 
         // let lower = Point2::new(0.06208009487909469, 0.0031649020793192567);
-        let upper = Point2::new( -0.020415658216408356, 0.05938468508636321);
+        let upper = Point2::new(-0.020415658216408356, 0.05938468508636321);
 
         let l = curve.distance_along(&upper);
         let p = curve.point_at(l);

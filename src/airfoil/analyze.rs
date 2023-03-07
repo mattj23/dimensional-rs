@@ -3,11 +3,12 @@ use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_po
 use crate::geometry::line2::{intersect_rays, Line2};
 use crate::geometry::polyline::{farthest_point_direction_distance, SpanningRay};
 use crate::geometry::shapes2::Circle2;
-use crate::serialize::{Point2f64, points_to_string, Vector2f64, VectorList2f64};
+use crate::serialize::{points_to_string, Point2f64, Vector2f64, VectorList2f64};
 use ncollide2d::math::Isometry;
 use ncollide2d::na::{Point2, Vector2};
 use ncollide2d::query::{PointQuery, Ray};
 
+use crate::airfoil::analyze::AdvanceResult::{CloseToEnd, FailedRay, NextRay};
 use crate::airfoil::edges::EdgeDetect;
 use serde::Serialize;
 use serde_json;
@@ -42,7 +43,7 @@ impl AfParams {
 }
 
 #[derive(Serialize)]
-struct ExtractStation {
+struct InscribedCircle {
     spanning_ray: SpanningRay,
 
     #[serde(with = "Point2f64")]
@@ -54,15 +55,15 @@ struct ExtractStation {
     thk: f64,
 }
 
-impl ExtractStation {
+impl InscribedCircle {
     fn new(
         spanning_ray: SpanningRay,
         upper: Point2<f64>,
         lower: Point2<f64>,
         circle: Circle2,
-    ) -> ExtractStation {
+    ) -> InscribedCircle {
         let thk = dist(&upper, &lower);
-        ExtractStation {
+        InscribedCircle {
             spanning_ray,
             upper,
             lower,
@@ -71,8 +72,8 @@ impl ExtractStation {
         }
     }
 
-    pub fn reversed(&self) -> ExtractStation {
-        ExtractStation::new(
+    pub fn reversed(&self) -> InscribedCircle {
+        InscribedCircle::new(
             self.spanning_ray.reversed(),
             self.lower,
             self.upper,
@@ -80,17 +81,13 @@ impl ExtractStation {
         )
     }
 
-    // pub fn upper_dir(&self) -> Vector2<f64> {
-    //     self.upper - self.circle.center
-    // }
+    fn radius(&self) -> f64 {
+        self.circle.ball.radius
+    }
 
-    // pub fn lower_dir(&self) -> Vector2<f64> {
-    //     self.upper - self.circle.center
-    // }
-
-    // fn contact_angle(&self) -> f64 {
-    //     closest_angle(&self.upper_dir(), &self.lower_dir())
-    // }
+    fn center(&self) -> Point2<f64> {
+        self.circle.center
+    }
 
     /// Calculates the camber point between the upper and lower points
     fn cp(&self) -> Point2<f64> {
@@ -102,7 +99,13 @@ impl ExtractStation {
     }
 
     fn camber_ray(&self) -> Ray<f64> {
-        Ray::new(self.cp(), self.contact_ray().orthogonal().normalize())
+        Ray::new(self.center(), self.contact_ray().orthogonal().normalize())
+    }
+
+    fn interpolation_error(&self, s0: &Self, s1: &Self) -> f64 {
+        deviation(&s0.upper, &s1.upper, &self.upper)
+            .max(deviation(&s0.lower, &s1.lower, &self.lower))
+            .max(deviation(&s0.center(), &s1.center(), &self.center()))
     }
 }
 
@@ -128,16 +131,16 @@ impl MeanSearchState {
     }
 }
 
-fn extract_station(curve: &Curve2, ray: &SpanningRay, tol: Option<f64>) -> ExtractStation {
-    let tol_value = tol.unwrap_or(1e-5);
+/// Calculates the values of an inscribed circle station by using a maximum distance binary search
+/// along a spanning ray through the curve. The search terminates when its motion falls below the
+/// provided tolerance value.
+fn calculate_inscribed(curve: &Curve2, ray: &SpanningRay, tol: f64) -> InscribedCircle {
     let mut positive = MeanSearchState::new(1.0, ray.at(1.0));
     let mut negative = MeanSearchState::new(0.0, ray.at(0.0));
 
     let mut working;
 
-    while (positive.fraction - negative.fraction) * ray.dir().norm() > tol_value {
-        // println!("{}, {}", positive.fraction, negative.fraction);
-
+    while (positive.fraction - negative.fraction) * ray.dir().norm() > tol {
         let fraction = (positive.fraction + negative.fraction) * 0.5;
         working = ray.at(fraction);
 
@@ -158,46 +161,57 @@ fn extract_station(curve: &Curve2, ray: &SpanningRay, tol: Option<f64>) -> Extra
         (positive.distance + negative.distance) * 0.5,
     );
 
-    ExtractStation::new(ray.clone(), positive.point, negative.point, circle)
+    InscribedCircle::new(ray.clone(), positive.point, negative.point, circle)
 }
 
-fn spanning_ray_advance(
-    curve: &Curve2,
-    camber_ray: &Ray<f64>,
-    sr_offset: f64,
-    d: f64,
-    min_tol: f64,
-) -> Option<SpanningRay> {
-    let mut advance = 0.25;
-    while advance >= 0.05 {
-        let offset = sr_offset + (d * advance);
-        let test_ray = Ray::new(camber_ray.point_at(offset), -camber_ray.orthogonal());
+enum AdvanceResult {
+    NextRay(SpanningRay),
+    CloseToEnd,
+    FailedRay,
+}
+
+fn advance_ray(curve: &Curve2, station: &InscribedCircle) -> AdvanceResult {
+    let camber_ray = station.camber_ray();
+    let farthest = curve
+        .max_point_in_ray_direction(&camber_ray)
+        .expect("Failed to get farthest point while advancing ray");
+
+    let d = dist(&farthest, &camber_ray.origin);
+
+    if d - station.radius() < station.radius() * 0.5 {
+        return CloseToEnd;
+    }
+
+    let mut f = 0.25;
+    while f >= 0.05 {
+        let next_center = camber_ray.point_at(f * station.radius());
+        let test_ray = Ray::new(next_center, -camber_ray.orthogonal());
         if let Some(ray) = curve.spanning_ray(&test_ray) {
-            if ray.dir().norm() < min_tol {
-                advance -= 0.05;
+            if ray.dir().norm() < station.thk * 0.1 {
+                f -= 0.05;
             } else {
-                return Some(ray);
+                return NextRay(ray);
             }
         } else {
-            advance -= 0.05;
+            f -= 0.05;
         }
     }
 
-    None
+    FailedRay
 }
 
 fn refine_between(
     curve: &Curve2,
-    s0: &ExtractStation,
-    s1: &ExtractStation,
+    s0: &InscribedCircle,
+    s1: &InscribedCircle,
     outer_tol: f64,
     inner_tol: f64,
-) -> Vec<ExtractStation> {
+) -> Vec<InscribedCircle> {
     let mut stations = Vec::new();
 
     let mid_ray = s0.spanning_ray.symmetry(&s1.spanning_ray);
     if let Some(ray) = curve.spanning_ray(&mid_ray) {
-        let station = extract_station(curve, &ray, Some(inner_tol));
+        let station = calculate_inscribed(curve, &ray, inner_tol);
 
         if deviation(&s0.upper, &s1.upper, &station.upper) <= outer_tol
             && deviation(&s0.lower, &s1.lower, &station.lower) <= outer_tol
@@ -216,6 +230,29 @@ fn refine_between(
     stations
 }
 
+fn refine_stations( curve: &Curve2, dest: &mut Vec<InscribedCircle>, stack: &mut Vec<InscribedCircle>, tol: f64) {
+    while let Some(next) = stack.pop() {
+        if let Some(last) = dest.last() {
+            let test_ray = next.spanning_ray.symmetry(&last.spanning_ray);
+            if let Some(ray) = curve.spanning_ray(&test_ray) {
+                let mut mid = calculate_inscribed(curve, &ray, tol);
+                // TODO: check the distance between the centers to make sure we're not stuck
+                if mid.interpolation_error(&next, last) > tol {
+                    // We are out of tolerance, we need to put next back on the stack and then put
+                    // the mid ray on top of it and try again
+                    stack.push(next);
+                    stack.push(mid);
+                } else {
+                    // We are within tolerance, we can put the next station in the destination
+                    dest.push(next);
+                }
+            }
+        } else {
+            dest.push(next);
+        }
+    }
+}
+
 /// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
 /// starting spanning ray. This function will terminate when it gets within a half thickness from
 /// the furthest point in the camber line direction
@@ -223,48 +260,34 @@ fn extract_half_camber_line(
     curve: &Curve2,
     starting_ray: &SpanningRay,
     tol: Option<f64>,
-) -> Vec<ExtractStation> {
+) -> Vec<InscribedCircle> {
     let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-2;
 
     println!("Tolerances: {}, {}", outer_tol, inner_tol);
 
-    let mut stations: Vec<ExtractStation> = Vec::new();
+    let mut stations: Vec<InscribedCircle> = Vec::new();
+    let mut refine_stack: Vec<InscribedCircle> = Vec::new();
     let mut ray = starting_ray.clone();
 
     loop {
-        let station = extract_station(curve, &ray, Some(inner_tol));
+        refine_stack.push(calculate_inscribed(curve, &ray, inner_tol));
+        refine_stations(curve, &mut stations, &mut refine_stack, outer_tol);
 
-        if let Some(last_station) = stations.last() {
-            let mut refined = refine_between(curve, last_station, &station, outer_tol, inner_tol);
-            stations.append(&mut refined);
-        }
+        let station = &stations.last().expect("Station was not transferred");
 
-        // Now we want to find the distance to the end of the airfoil in this direction. As we get
-        // close to the leading or trailing edge, this distance will converge with the current
-        // radius of the inscribed circle.
-        let camber_ray = station.camber_ray();
-        let to_farthest = farthest_point_direction_distance(&curve.line, &camber_ray);
-        let half_thickness = station.thk * 0.5;
-
-        stations.push(station);
-
-        if half_thickness * 1.25 >= to_farthest {
-            break;
-        }
-
-        let (sr_dist, _) = intersect_rays(&camber_ray, &ray.ray())
-            .expect("Failed measuring distance from camber ray to spanning ray");
-
-        let advance_by = half_thickness.min(to_farthest) * 0.5;
-        let advance_tol = outer_tol * 10.0;
-        if let Some(next_ray) = spanning_ray_advance(curve, &camber_ray, sr_dist, advance_by, advance_tol) {
-            ray = next_ray;
-            continue;
-        } else {
-            println!("failed spanning ray");
-            break;
-        }
+        match advance_ray(curve, station) {
+            NextRay(r) => {
+                ray = r;
+            }
+            CloseToEnd => {
+                break;
+            }
+            FailedRay => {
+                println!("Failed to advance spanning ray");
+                break;
+            }
+        };
     }
 
     stations
@@ -272,23 +295,27 @@ fn extract_half_camber_line(
 
 #[derive(Serialize)]
 struct DebugData {
-    stations: Vec<ExtractStation>,
+    stations: Vec<InscribedCircle>,
     line: VectorList2f64,
     // end0: VectorList2f64,
     // end1: VectorList2f64,
-
     #[serde(with = "Point2f64")]
     p0: Point2<f64>,
     #[serde(with = "Point2f64")]
     p1: Point2<f64>,
 }
 
-fn simple_end_intersection(curve: &Curve2, stations: &Vec<ExtractStation>) -> Point2<f64> {
+fn simple_end_intersection(curve: &Curve2, stations: &Vec<InscribedCircle>) -> Point2<f64> {
     let s1 = &stations[stations.len() - 1];
     let s0 = &stations[stations.len() - 2];
-    let v = Ray::new(s1.circle.center, (s1.circle.center - s0.circle.center).normalize());
+    let v = Ray::new(
+        s1.circle.center,
+        (s1.circle.center - s0.circle.center).normalize(),
+    );
     // curve.max_ray_intersection(&v).expect("Failed on end intersection")
-    curve.max_point_in_ray_direction(&v).expect("Failed on end search")
+    curve
+        .max_point_in_ray_direction(&v)
+        .expect("Failed on end search")
 }
 
 pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), Box<dyn Error>> {
@@ -325,7 +352,7 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
 }
 
 /// Given a full curve and the last station, portion out the
-fn extract_edge_data(curve: &Curve2, station: &ExtractStation, invert: bool) -> Option<Curve2> {
+fn extract_edge_data(curve: &Curve2, station: &InscribedCircle, invert: bool) -> Option<Curve2> {
     let edge_dir = if invert {
         -station.camber_ray().dir.normalize()
     } else {

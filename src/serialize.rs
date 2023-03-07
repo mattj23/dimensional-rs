@@ -24,7 +24,7 @@ impl Vector2f64 {
     }
 
     pub fn from_vec(v: &Vector2<f64>) -> Self {
-        Self {x: v.x, y: v.y}
+        Self { x: v.x, y: v.y }
     }
 }
 
@@ -77,7 +77,10 @@ impl Serialize for VectorList2f64 {
 }
 
 pub fn points_to_string(points: &[Point2<f64>]) -> String {
-    format!("{}", points.iter().map(|v| v2_to_str(&v.coords)).format(";"))
+    format!(
+        "{}",
+        points.iter().map(|v| v2_to_str(&v.coords)).format(";")
+    )
 }
 
 pub fn points_from_str(s: &str) -> Vec<Point2<f64>> {
@@ -85,11 +88,10 @@ pub fn points_from_str(s: &str) -> Vec<Point2<f64>> {
     for token in s.split(";") {
         let mut pieces: [f64; 2] = [Default::default(); 2];
         for pair in token.split(",").take(2).enumerate() {
-            pieces[pair.0] = pair
-                .1
-                .trim()
-                .parse()
-                .unwrap_or_else(|_| panic!("Couldn't parse a floating point value: '{}'", pair.1));
+            pieces[pair.0] =
+                pair.1.trim().parse().unwrap_or_else(|_| {
+                    panic!("Couldn't parse a floating point value: '{}'", pair.1)
+                });
         }
         raw.push(Point2::new(pieces[0], pieces[1]));
     }

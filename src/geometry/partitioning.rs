@@ -1,7 +1,7 @@
-use std::collections::VecDeque;
-use ncollide2d::na::{Point2, RealField};
-use ncollide2d::partitioning::{BVH, BVT, Visitor, VisitStatus};
 use crate::geometry::aabb2::DistanceSearch;
+use ncollide2d::na::{Point2, RealField};
+use ncollide2d::partitioning::{VisitStatus, Visitor, BVH, BVT};
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub enum SearchType {
@@ -60,4 +60,3 @@ impl<T, BV> BreadthFirst<T, BV> for BVT<T, BV> {
         }
     }
 }
-

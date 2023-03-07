@@ -1,7 +1,7 @@
-use std::fs;
 use dimensional_rs::airfoil::analyze::{analyze_airfoil, AfParams};
 use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
 use dimensional_rs::serialize::points_from_str;
+use std::fs;
 
 fn main() {
     // let naca = Naca4Digit::new(0.12, 4.0, 0.3, 0.4);
@@ -13,4 +13,3 @@ fn main() {
 
     let result = analyze_airfoil(&points, &AfParams::auto_edges(1e-3));
 }
-
