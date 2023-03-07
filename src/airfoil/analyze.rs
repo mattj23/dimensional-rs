@@ -1,113 +1,20 @@
 use crate::geometry::curve2::Curve2;
-use crate::geometry::distances2::{deviation, dist, farthest_pair_indices, mid_point};
-use crate::geometry::line2::{intersect_rays, Line2};
-use crate::geometry::polyline::{farthest_point_direction_distance, SpanningRay};
+use crate::geometry::distances2::{deviation, dist, farthest_pair_indices};
+use crate::geometry::line2::Line2;
+use crate::geometry::polyline::SpanningRay;
 use crate::geometry::shapes2::Circle2;
-use crate::serialize::{points_to_string, Point2f64, Vector2f64, VectorList2f64};
+use crate::serialize::VectorList2f64;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::{Point2, Vector2};
 use ncollide2d::query::{PointQuery, Ray};
 
-use crate::airfoil::analyze::AdvanceResult::{CloseToEnd, FailedRay, NextRay};
-use crate::airfoil::edges::EdgeDetect;
+use super::common::{AfParams, EdgeDetect, InscribedCircle};
+use crate::errors::InvalidGeometry;
 use serde::Serialize;
 use serde_json;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
-
-pub struct AfParams {
-    pub tol: f64,
-    pub leading: EdgeDetect,
-    pub trailing: EdgeDetect,
-}
-
-impl Default for AfParams {
-    fn default() -> Self {
-        AfParams::new(1e-4, EdgeDetect::Auto, EdgeDetect::Auto)
-    }
-}
-
-impl AfParams {
-    pub fn auto_edges(tol: f64) -> Self {
-        Self::new(tol, EdgeDetect::Auto, EdgeDetect::Auto)
-    }
-
-    pub fn new(tol: f64, leading: EdgeDetect, trailing: EdgeDetect) -> Self {
-        AfParams {
-            tol,
-            leading,
-            trailing,
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct InscribedCircle {
-    spanning_ray: SpanningRay,
-
-    #[serde(with = "Point2f64")]
-    upper: Point2<f64>,
-
-    #[serde(with = "Point2f64")]
-    lower: Point2<f64>,
-    circle: Circle2,
-    thk: f64,
-}
-
-impl InscribedCircle {
-    fn new(
-        spanning_ray: SpanningRay,
-        upper: Point2<f64>,
-        lower: Point2<f64>,
-        circle: Circle2,
-    ) -> InscribedCircle {
-        let thk = dist(&upper, &lower);
-        InscribedCircle {
-            spanning_ray,
-            upper,
-            lower,
-            circle,
-            thk,
-        }
-    }
-
-    pub fn reversed(&self) -> InscribedCircle {
-        InscribedCircle::new(
-            self.spanning_ray.reversed(),
-            self.lower,
-            self.upper,
-            self.circle.clone(),
-        )
-    }
-
-    fn radius(&self) -> f64 {
-        self.circle.ball.radius
-    }
-
-    fn center(&self) -> Point2<f64> {
-        self.circle.center
-    }
-
-    /// Calculates the camber point between the upper and lower points
-    fn cp(&self) -> Point2<f64> {
-        mid_point(&self.upper, &self.lower)
-    }
-
-    fn contact_ray(&self) -> Ray<f64> {
-        Ray::new(self.lower, self.upper - self.lower)
-    }
-
-    fn camber_ray(&self) -> Ray<f64> {
-        Ray::new(self.center(), self.contact_ray().orthogonal().normalize())
-    }
-
-    fn interpolation_error(&self, s0: &Self, s1: &Self) -> f64 {
-        deviation(&s0.upper, &s1.upper, &self.upper)
-            .max(deviation(&s0.lower, &s1.lower, &self.lower))
-            .max(deviation(&s0.center(), &s1.center(), &self.center()))
-    }
-}
 
 struct MeanSearchState {
     fraction: f64,
@@ -179,7 +86,7 @@ fn advance_ray(curve: &Curve2, station: &InscribedCircle) -> AdvanceResult {
     let d = dist(&farthest, &camber_ray.origin);
 
     if d - station.radius() < station.radius() * 0.5 {
-        return CloseToEnd;
+        return AdvanceResult::CloseToEnd;
     }
 
     let mut f = 0.25;
@@ -190,14 +97,14 @@ fn advance_ray(curve: &Curve2, station: &InscribedCircle) -> AdvanceResult {
             if ray.dir().norm() < station.thk * 0.1 {
                 f -= 0.05;
             } else {
-                return NextRay(ray);
+                return AdvanceResult::NextRay(ray);
             }
         } else {
             f -= 0.05;
         }
     }
 
-    FailedRay
+    AdvanceResult::FailedRay
 }
 
 fn refine_between(
@@ -230,12 +137,17 @@ fn refine_between(
     stations
 }
 
-fn refine_stations( curve: &Curve2, dest: &mut Vec<InscribedCircle>, stack: &mut Vec<InscribedCircle>, tol: f64) {
+fn refine_stations(
+    curve: &Curve2,
+    dest: &mut Vec<InscribedCircle>,
+    stack: &mut Vec<InscribedCircle>,
+    tol: f64,
+) {
     while let Some(next) = stack.pop() {
         if let Some(last) = dest.last() {
             let test_ray = next.spanning_ray.symmetry(&last.spanning_ray);
             if let Some(ray) = curve.spanning_ray(&test_ray) {
-                let mut mid = calculate_inscribed(curve, &ray, tol);
+                let mid = calculate_inscribed(curve, &ray, tol);
                 // TODO: check the distance between the centers to make sure we're not stuck
                 if mid.interpolation_error(&next, last) > tol {
                     // We are out of tolerance, we need to put next back on the stack and then put
@@ -254,8 +166,8 @@ fn refine_stations( curve: &Curve2, dest: &mut Vec<InscribedCircle>, stack: &mut
 }
 
 /// Extracts the unambiguous portion of a mean camber line in the orthogonal direction to a
-/// starting spanning ray. This function will terminate when it gets within a half thickness from
-/// the furthest point in the camber line direction
+/// starting spanning ray. This function will terminate when it gets close to the farthest point in
+/// the camber line direction.
 fn extract_half_camber_line(
     curve: &Curve2,
     starting_ray: &SpanningRay,
@@ -263,8 +175,6 @@ fn extract_half_camber_line(
 ) -> Vec<InscribedCircle> {
     let outer_tol = tol.unwrap_or(1e-3);
     let inner_tol = outer_tol * 1e-2;
-
-    println!("Tolerances: {}, {}", outer_tol, inner_tol);
 
     let mut stations: Vec<InscribedCircle> = Vec::new();
     let mut refine_stack: Vec<InscribedCircle> = Vec::new();
@@ -277,13 +187,13 @@ fn extract_half_camber_line(
         let station = &stations.last().expect("Station was not transferred");
 
         match advance_ray(curve, station) {
-            NextRay(r) => {
+            AdvanceResult::NextRay(r) => {
                 ray = r;
             }
-            CloseToEnd => {
+            AdvanceResult::CloseToEnd => {
                 break;
             }
-            FailedRay => {
+            AdvanceResult::FailedRay => {
                 println!("Failed to advance spanning ray");
                 break;
             }
@@ -299,23 +209,14 @@ struct DebugData {
     line: VectorList2f64,
     // end0: VectorList2f64,
     // end1: VectorList2f64,
-    #[serde(with = "Point2f64")]
-    p0: Point2<f64>,
-    #[serde(with = "Point2f64")]
-    p1: Point2<f64>,
+    // #[serde(with = "Point2f64")]
+    // p0: Point2<f64>,
+    // #[serde(with = "Point2f64")]
+    // p1: Point2<f64>,
 }
 
-fn simple_end_intersection(curve: &Curve2, stations: &Vec<InscribedCircle>) -> Point2<f64> {
-    let s1 = &stations[stations.len() - 1];
-    let s0 = &stations[stations.len() - 2];
-    let v = Ray::new(
-        s1.circle.center,
-        (s1.circle.center - s0.circle.center).normalize(),
-    );
-    // curve.max_ray_intersection(&v).expect("Failed on end intersection")
-    curve
-        .max_point_in_ray_direction(&v)
-        .expect("Failed on end search")
+fn reverse_stations(stations: &mut [InscribedCircle]) {
+    stations.iter_mut().for_each(|i| i.reverse_in_place());
 }
 
 pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), Box<dyn Error>> {
@@ -324,15 +225,20 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
 
     // Build the unambiguous portions of the airfoil, away from the leading and trailing edges
     let mut stations = extract_half_camber_line(&curve, &spanning, Some(params.tol));
-    let p0 = simple_end_intersection(&curve, &stations);
-
     let half = extract_half_camber_line(&curve, &spanning.reversed(), Some(params.tol));
-    let p1 = simple_end_intersection(&curve, &half);
-
     stations.reverse();
     stations.append(&mut half.iter().skip(1).map(|s| s.reversed()).collect());
 
+    if stations.is_empty() {
+        return Err(InvalidGeometry::GeometricOpFailed.into());
+    }
+
+    // Attempt to detect the orientation of the leading edge
+
     // Now deal with the leading and trailing edges
+    if let Some(end0) = extract_edge_data(&curve, stations.first().unwrap(), false) {
+        // compute_edge(&curve, stations.first().unwrap(), params.)
+    }
     // let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
     // let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
 
@@ -342,13 +248,19 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
         line: VectorList2f64::from_points(curve.line.points()),
         // end0: VectorList2f64::from_points(end0.line.points()),
         // end1: VectorList2f64::from_points(end1.line.points()),
-        p0,
-        p1,
     };
     let s = serde_json::to_string(&data).expect("Failed to serialize");
     write!(file, "{}", s)?;
 
     Ok(())
+}
+
+fn le_is_oriented_by_tmax(curve: &Curve2) -> bool {
+    todo!()
+}
+
+fn le_is_oriented_by_direction(curve: &Curve2, dir: &Vector2<f64>) -> bool {
+    todo!()
 }
 
 /// Given a full curve and the last station, portion out the
@@ -394,3 +306,5 @@ fn create_curve_and_orient(
         Ok((curve, spanning))
     }
 }
+
+fn compute_edge(curve: &Curve2, station: &InscribedCircle, edge_type: &EdgeDetect, tol: f64) {}

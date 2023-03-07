@@ -1,8 +1,11 @@
 use ncollide2d::na::Point2;
 
 pub mod analyze;
-pub mod edges;
+mod common;
 pub mod generate;
+
+pub use analyze::analyze_airfoil;
+pub use common::{AfParams, EdgeDetect};
 
 pub struct CamberStation {
     pub camber: Point2<f64>,

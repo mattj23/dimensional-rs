@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter, Pointer};
 #[derive(Debug)]
 pub enum InvalidGeometry {
     NotEnoughPoints,
+    GeometricOpFailed,
 }
 
 impl Display for InvalidGeometry {

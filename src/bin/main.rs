@@ -1,5 +1,5 @@
-use dimensional_rs::airfoil::analyze::{analyze_airfoil, AfParams};
-use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
+use dimensional_rs::airfoil::{analyze_airfoil, AfParams};
+// use dimensional_rs::airfoil::generate::{AirfoilGenerator, Naca4Digit};
 use dimensional_rs::serialize::points_from_str;
 use std::fs;
 
