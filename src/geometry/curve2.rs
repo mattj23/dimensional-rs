@@ -3,7 +3,7 @@ use crate::errors::InvalidGeometry;
 use crate::geometry::common::{sym_unit_vec, IndAndFrac, UnitVec2};
 use crate::geometry::distances2::dist;
 use crate::geometry::line2::Line2;
-use crate::geometry::polyline::{spanning_ray, SpanningRay};
+use crate::geometry::polyline::{max_intersection, spanning_ray, SpanningRay};
 use itertools::Itertools;
 use ncollide2d::math::Isometry;
 use ncollide2d::na::Point2;
@@ -262,6 +262,27 @@ impl Curve2 {
 
     pub fn spanning_ray(&self, test_ray: &Ray<f64>) -> Option<SpanningRay> {
         spanning_ray(&self.line, test_ray)
+    }
+
+    pub fn max_ray_intersection(&self, ray: &Ray<f64>) -> Option<Point2<f64>> {
+        if let Some(t) = max_intersection(&self.line, ray) {
+            Some(ray.point_at(t))
+        } else {
+            None
+        }
+    }
+
+    pub fn max_point_in_ray_direction(&self, ray: &Ray<f64>) -> Option<Point2<f64>> {
+        let mut d = f64::MIN;
+        let mut r = None;
+        for p in self.line.points().iter() {
+            let t = ray.projected_parameter(p);
+            if t > d {
+                d = t;
+                r = Some(*p)
+            }
+        }
+        r
     }
 }
 

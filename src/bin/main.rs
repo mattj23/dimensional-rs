@@ -11,6 +11,6 @@ fn main() {
     let data = fs::read_to_string("data/test.txt").unwrap();
     let points = points_from_str(&data);
 
-    let result = analyze_airfoil(&points, &AfParams::default());
+    let result = analyze_airfoil(&points, &AfParams::auto_edges(1e-3));
 }
 

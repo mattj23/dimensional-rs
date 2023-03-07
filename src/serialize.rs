@@ -18,6 +18,16 @@ pub struct Vector2f64 {
     y: f64,
 }
 
+impl Vector2f64 {
+    pub fn from_point(p: &Point2<f64>) -> Self {
+        Self::from_vec(&p.coords)
+    }
+
+    pub fn from_vec(v: &Vector2<f64>) -> Self {
+        Self {x: v.x, y: v.y}
+    }
+}
+
 #[derive(Serialize)]
 #[serde(remote = "Ball<f64>")]
 pub struct Ballf64 {
