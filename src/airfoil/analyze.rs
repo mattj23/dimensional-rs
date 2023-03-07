@@ -249,7 +249,12 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
 
     // Now deal with the leading and trailing edges
     if let Some(end0) = extract_edge_data(&curve, stations.first().unwrap(), false) {
-        // compute_edge(&curve, stations.first().unwrap(), params.)
+        compute_edge(
+            &curve,
+            stations.first().unwrap(),
+            &params.leading,
+            &params.tol,
+        )
     }
     // let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
     // let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
@@ -346,4 +351,24 @@ fn create_curve_and_orient(
     }
 }
 
-fn compute_edge(curve: &Curve2, station: &InscribedCircle, edge_type: &EdgeDetect, tol: f64) {}
+fn compute_edge(curve: &Curve2, station: &InscribedCircle, edge_type: &EdgeDetect, tol: &f64) {
+    let working_type = if let EdgeDetect::Auto = edge_type {
+        guess_edge_type(curve, station)
+    } else {
+        *edge_type
+    };
+
+    match working_type {
+        EdgeDetect::Auto => {
+            panic!("Auto somehow persisted after edge type guess")
+        }
+        EdgeDetect::Circle => {}
+        EdgeDetect::Square => {}
+        EdgeDetect::Point => {}
+        EdgeDetect::Open => {}
+    }
+}
+
+fn guess_edge_type(curve: &Curve2, station: &InscribedCircle) -> EdgeDetect {
+    todo!()
+}

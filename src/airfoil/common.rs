@@ -8,6 +8,7 @@ use ncollide2d::query::Ray;
 use serde::Serialize;
 use std::mem::swap;
 
+#[derive(Copy, Clone)]
 pub enum EdgeDetect {
     Auto,
     Circle,
