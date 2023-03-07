@@ -247,17 +247,19 @@ pub fn analyze_airfoil(points: &[Point2<f64>], params: &AfParams) -> Result<(), 
         reverse_stations(&mut stations);
     }
 
-    // Now deal with the leading and trailing edges
-    if let Some(end0) = extract_edge_data(&curve, stations.first().unwrap(), false) {
-        compute_edge(
-            &curve,
-            stations.first().unwrap(),
-            &params.leading,
-            &params.tol,
-        )
+    // Compute the leading edge
+    if let Some(s0) = stations.first() {
+        if let Some(end0) = extract_edge_data(&curve, s0, false) {
+            compute_edge(&end0, s0, &params.leading, &params.tol)
+        }
     }
-    // let end0 = extract_edge_data(&curve, stations.first().unwrap(), false).unwrap();
-    // let end1 = extract_edge_data(&curve, stations.last().unwrap(), true).unwrap();
+
+    // Compute the trailing edge
+    if let Some(s1) = stations.last() {
+        if let Some(end1) = extract_edge_data(&curve, s1, true) {
+            compute_edge(&end1, s1, &params.trailing, &params.tol)
+        }
+    }
 
     let mut file = File::create("data/output.json").expect("Failed to create file");
     let data = DebugData {
